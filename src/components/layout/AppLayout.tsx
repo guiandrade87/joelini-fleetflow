@@ -18,6 +18,7 @@ import {
   X,
   Bell,
   ChevronDown,
+  Shield,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,6 +48,7 @@ const navItems: NavItem[] = [
   { label: "Ocorrências", href: "/ocorrencias", icon: <AlertTriangle className="h-5 w-5" /> },
   { label: "Termos", href: "/termos", icon: <FileCheck className="h-5 w-5" /> },
   { label: "Relatórios", href: "/relatorios", icon: <BarChart3 className="h-5 w-5" /> },
+  { label: "Auditoria", href: "/auditoria", icon: <Shield className="h-5 w-5" /> },
   { label: "Configurações", href: "/configuracoes", icon: <Settings className="h-5 w-5" /> },
 ];
 
