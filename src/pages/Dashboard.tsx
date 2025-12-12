@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { AlertCard } from "@/components/dashboard/AlertCard";
@@ -5,6 +7,40 @@ import { RecentTripsTable } from "@/components/dashboard/RecentTripsTable";
 import { MaintenanceSchedule } from "@/components/dashboard/MaintenanceSchedule";
 import { Car, Route, Fuel, DollarSign, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "@/hooks/use-toast";
+
+const checklistItems = [
+  { id: "niveis", label: "Níveis (óleo, água, combustível)" },
+  { id: "pneus", label: "Pneus (calibragem e estado)" },
+  { id: "luzes", label: "Luzes (faróis, lanternas, setas)" },
+  { id: "freios", label: "Freios" },
+  { id: "limpador", label: "Limpador de para-brisa" },
+  { id: "macaco", label: "Macaco e chave de roda" },
+  { id: "extintor", label: "Extintor de incêndio" },
+  { id: "triangulo", label: "Triângulo de sinalização" },
+  { id: "documentos", label: "Documentos do veículo" },
+  { id: "estepe", label: "Estepe" },
+];
 
 const mockAlerts = [
   {
@@ -113,6 +149,56 @@ const mockMaintenances = [
 ];
 
 export default function Dashboard() {
+  const navigate = useNavigate();
+  const [isFuelingOpen, setIsFuelingOpen] = useState(false);
+  const [isTripOpen, setIsTripOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("dados");
+  const [checkedItems, setCheckedItems] = useState<string[]>([]);
+
+  const handleCheckItem = (itemId: string, checked: boolean) => {
+    if (checked) {
+      setCheckedItems([...checkedItems, itemId]);
+    } else {
+      setCheckedItems(checkedItems.filter((id) => id !== itemId));
+    }
+  };
+
+  const handleRegisterFueling = () => {
+    setIsFuelingOpen(false);
+    toast({
+      title: "Abastecimento registrado",
+      description: "O abastecimento foi registrado com sucesso.",
+    });
+  };
+
+  const handleStartTrip = () => {
+    if (checkedItems.length < checklistItems.length) {
+      toast({
+        title: "Checklist incompleto",
+        description: "Você precisa verificar todos os itens do checklist antes de iniciar a viagem.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsTripOpen(false);
+    setCheckedItems([]);
+    setActiveTab("dados");
+    toast({
+      title: "Viagem iniciada",
+      description: "A viagem foi registrada e iniciada com sucesso.",
+    });
+  };
+
+  const handleScheduleTrip = () => {
+    setIsTripOpen(false);
+    setCheckedItems([]);
+    setActiveTab("dados");
+    toast({
+      title: "Viagem agendada",
+      description: "A viagem foi agendada com sucesso.",
+    });
+  };
+
   return (
     <AppLayout>
       <div className="space-y-8 animate-fade-in">
@@ -127,11 +213,11 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex gap-3">
-            <Button variant="outline">
+            <Button variant="outline" onClick={() => setIsFuelingOpen(true)}>
               <Fuel className="h-4 w-4 mr-2" />
               Registrar Abastecimento
             </Button>
-            <Button className="btn-primary-glow">
+            <Button className="btn-primary-glow" onClick={() => setIsTripOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
               Nova Viagem
             </Button>
@@ -179,6 +265,231 @@ export default function Dashboard() {
         {/* Recent Trips */}
         <RecentTripsTable trips={mockTrips} />
       </div>
+
+      {/* Dialog Registrar Abastecimento */}
+      <Dialog open={isFuelingOpen} onOpenChange={setIsFuelingOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Registrar Abastecimento</DialogTitle>
+            <DialogDescription>
+              Preencha os dados do abastecimento realizado.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="veiculo">Veículo</Label>
+                <Select>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">Fiat Strada - ABC-1234</SelectItem>
+                    <SelectItem value="2">VW Saveiro - DEF-5678</SelectItem>
+                    <SelectItem value="3">Fiat Ducato - GHI-9012</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="motorista">Motorista</Label>
+                <Select>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">João Silva</SelectItem>
+                    <SelectItem value="2">Maria Santos</SelectItem>
+                    <SelectItem value="3">Pedro Costa</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="data">Data</Label>
+                <Input id="data" type="date" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="km">Odômetro (km)</Label>
+                <Input id="km" type="number" placeholder="0" />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="litros">Litros</Label>
+                <Input id="litros" type="number" step="0.01" placeholder="0.00" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="valor">Valor (R$)</Label>
+                <Input id="valor" type="number" step="0.01" placeholder="0.00" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="combustivel">Combustível</Label>
+                <Select>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="gasolina">Gasolina</SelectItem>
+                    <SelectItem value="etanol">Etanol</SelectItem>
+                    <SelectItem value="diesel">Diesel S10</SelectItem>
+                    <SelectItem value="gnv">GNV</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="posto">Posto</Label>
+              <Input id="posto" placeholder="Nome do posto" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsFuelingOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleRegisterFueling}>
+              Registrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Nova Viagem */}
+      <Dialog open={isTripOpen} onOpenChange={setIsTripOpen}>
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Registrar Nova Viagem</DialogTitle>
+            <DialogDescription>
+              Preencha os dados da viagem. O checklist é obrigatório antes de iniciar.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="dados">Dados da Viagem</TabsTrigger>
+              <TabsTrigger value="checklist">
+                Checklist ({checkedItems.length}/{checklistItems.length})
+              </TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="dados" className="space-y-4 pt-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="veiculo">Veículo</Label>
+                  <Select>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o veículo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">Fiat Strada - ABC-1234</SelectItem>
+                      <SelectItem value="2">VW Saveiro - DEF-5678</SelectItem>
+                      <SelectItem value="4">Renault Master - JKL-3456</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="motorista">Motorista</Label>
+                  <Select>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o motorista" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">João Silva</SelectItem>
+                      <SelectItem value="3">Maria Santos</SelectItem>
+                      <SelectItem value="4">Pedro Costa</SelectItem>
+                      <SelectItem value="5">Ana Rodrigues</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="origem">Origem</Label>
+                  <Input id="origem" placeholder="Cidade, UF" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="destino">Destino</Label>
+                  <Input id="destino" placeholder="Cidade, UF" />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="dataHoraSaida">Data/Hora Saída</Label>
+                  <Input id="dataHoraSaida" type="datetime-local" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="kmInicio">KM Inicial</Label>
+                  <Input id="kmInicio" type="number" placeholder="0" />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="finalidade">Finalidade da Viagem</Label>
+                <Textarea 
+                  id="finalidade" 
+                  placeholder="Descreva o motivo da viagem..."
+                  rows={3}
+                />
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="checklist" className="space-y-4 pt-4">
+              <div className="rounded-lg border border-border p-4 bg-muted/20">
+                <p className="text-sm text-muted-foreground mb-4">
+                  Verifique todos os itens antes de iniciar a viagem. Todos os itens marcados serão registrados como verificados.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  {checklistItems.map((item) => (
+                    <div key={item.id} className="flex items-center space-x-2">
+                      <Checkbox 
+                        id={item.id} 
+                        checked={checkedItems.includes(item.id)}
+                        onCheckedChange={(checked) => handleCheckItem(item.id, checked as boolean)}
+                      />
+                      <Label 
+                        htmlFor={item.id} 
+                        className="text-sm font-normal cursor-pointer"
+                      >
+                        {item.label}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="observacoes">Observações</Label>
+                <Textarea 
+                  id="observacoes" 
+                  placeholder="Observações adicionais sobre o estado do veículo..."
+                  rows={3}
+                />
+              </div>
+            </TabsContent>
+          </Tabs>
+          
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsTripOpen(false);
+                setCheckedItems([]);
+                setActiveTab("dados");
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button variant="secondary" onClick={handleScheduleTrip}>
+              Salvar como Agendada
+            </Button>
+            <Button onClick={handleStartTrip}>
+              Iniciar Viagem
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
