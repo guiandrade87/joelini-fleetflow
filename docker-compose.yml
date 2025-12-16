@@ -20,6 +20,25 @@ services:
       timeout: 5s
       retries: 5
 
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: joelini_api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-joelini}:${POSTGRES_PASSWORD:-joelini2024}@db:5432/${POSTGRES_DB:-frota_joelini}
+      - JWT_SECRET=${JWT_SECRET:-joelini_secret_key_2024_mudar_em_producao}
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
   app:
     build:
       context: .
@@ -30,10 +49,9 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-joelini}:${POSTGRES_PASSWORD:-joelini2024}@db:5432/${POSTGRES_DB:-frota_joelini}
     depends_on:
-      db:
-        condition: service_healthy
+      - api
 
 volumes:
   postgres_data:
+  uploads_data:
