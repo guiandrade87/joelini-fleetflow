@@ -1,4 +1,6 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3003/api';
+// Detecta se está rodando no Docker (via nginx) ou localmente
+const isDocker = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+const API_URL = import.meta.env.VITE_API_URL || (isDocker ? '/api' : 'http://localhost:3003/api');
 
 class ApiService {
   private token: string | null = null;
