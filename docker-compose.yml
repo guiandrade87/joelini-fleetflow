@@ -27,10 +27,10 @@ services:
     container_name: joelini_api
     restart: unless-stopped
     ports:
-      - "3005:3005"
+      - "3003:3003"
     environment:
       - NODE_ENV=production
-      - PORT=3005
+      - PORT=3003
       - DATABASE_URL=postgresql://${POSTGRES_USER:-joelini}:${POSTGRES_PASSWORD:-joelini2024}@db:5432/${POSTGRES_DB:-frota_joelini}
       - JWT_SECRET=${JWT_SECRET:-joelini_secret_key_2024_mudar_em_producao}
     volumes:
