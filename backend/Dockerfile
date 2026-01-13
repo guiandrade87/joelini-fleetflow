@@ -4,8 +4,8 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Copiar package.json e instalar dependências
-COPY package*.json ./
-RUN npm ci --only=production
+COPY package.json ./
+RUN npm install --omit=dev
 
 # Copiar código fonte
 COPY src ./src
@@ -14,7 +14,7 @@ COPY src ./src
 RUN mkdir -p uploads/vehicles uploads/drivers uploads/documents uploads/incidents
 
 # Expor porta
-EXPOSE 3001
+EXPOSE 3005
 
 # Iniciar aplicação
 CMD ["node", "src/index.js"]
