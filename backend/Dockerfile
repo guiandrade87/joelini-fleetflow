@@ -14,7 +14,7 @@ COPY src ./src
 RUN mkdir -p uploads/vehicles uploads/drivers uploads/documents uploads/incidents
 
 # Expor porta
-EXPOSE 3005
+EXPOSE 3003
 
 # Iniciar aplicação
 CMD ["node", "src/index.js"]
