@@ -1,5 +1,5 @@
 import { ReactNode, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import logoJoelini from "@/assets/logo-joelini.png";
 import {
@@ -16,9 +16,8 @@ import {
   LogOut,
   Menu,
   X,
-  Bell,
   ChevronDown,
-  Shield,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,26 +29,30 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/contexts/AuthContext";
+import { ProfileDialog } from "@/components/profile/ProfileDialog";
+import { NotificationsDropdown } from "@/components/notifications/NotificationsDropdown";
 
 interface NavItem {
   label: string;
   href: string;
   icon: ReactNode;
   badge?: number;
+  roles?: string[];
 }
 
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/", icon: <LayoutDashboard className="h-5 w-5" /> },
-  { label: "Veículos", href: "/veiculos", icon: <Car className="h-5 w-5" /> },
-  { label: "Motoristas", href: "/motoristas", icon: <Users className="h-5 w-5" /> },
+  { label: "Veículos", href: "/veiculos", icon: <Car className="h-5 w-5" />, roles: ["admin", "gestor_frota", "planejamento", "operacional"] },
+  { label: "Motoristas", href: "/motoristas", icon: <Users className="h-5 w-5" />, roles: ["admin", "gestor_frota"] },
   { label: "Viagens", href: "/viagens", icon: <Route className="h-5 w-5" /> },
   { label: "Abastecimentos", href: "/abastecimentos", icon: <Fuel className="h-5 w-5" /> },
-  { label: "Manutenção", href: "/manutencao", icon: <Wrench className="h-5 w-5" />, badge: 3 },
-  { label: "Ocorrências", href: "/ocorrencias", icon: <AlertTriangle className="h-5 w-5" /> },
+  { label: "Manutenção", href: "/manutencao", icon: <Wrench className="h-5 w-5" />, badge: 3, roles: ["admin", "gestor_frota", "planejamento"] },
+  { label: "Ocorrências", href: "/ocorrencias", icon: <AlertTriangle className="h-5 w-5" />, roles: ["admin", "gestor_frota", "planejamento", "operacional"] },
   { label: "Termos", href: "/termos", icon: <FileCheck className="h-5 w-5" /> },
-  { label: "Relatórios", href: "/relatorios", icon: <BarChart3 className="h-5 w-5" /> },
-  { label: "Auditoria", href: "/auditoria", icon: <Shield className="h-5 w-5" /> },
-  { label: "Configurações", href: "/configuracoes", icon: <Settings className="h-5 w-5" /> },
+  { label: "Relatórios", href: "/relatorios", icon: <BarChart3 className="h-5 w-5" />, roles: ["admin", "gestor_frota", "planejamento", "operacional"] },
+  { label: "Auditoria", href: "/auditoria", icon: <Settings className="h-5 w-5" />, roles: ["admin", "gestor_frota"] },
+  { label: "Configurações", href: "/configuracoes", icon: <Settings className="h-5 w-5" />, roles: ["admin"] },
 ];
 
 interface AppLayoutProps {
@@ -58,7 +61,31 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+
+  const userRole = user?.role || "motorista";
+
+  const filteredNavItems = navItems.filter((item) => {
+    if (!item.roles) return true;
+    return item.roles.includes(userRole);
+  });
+
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login");
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -73,10 +100,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             <Menu className="h-5 w-5" />
           </Button>
           <img src={logoJoelini} alt="Joelini" className="h-8" />
-          <Button variant="ghost" size="icon" className="relative">
-            <Bell className="h-5 w-5" />
-            <span className="absolute top-1 right-1 h-2 w-2 bg-destructive rounded-full" />
-          </Button>
+          <NotificationsDropdown />
         </div>
       </header>
 
@@ -113,7 +137,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           {/* Navigation */}
           <nav className="flex-1 overflow-y-auto py-4 px-3">
             <ul className="space-y-1">
-              {navItems.map((item) => {
+              {filteredNavItems.map((item) => {
                 const isActive = location.pathname === item.href;
                 return (
                   <li key={item.href}>
@@ -153,27 +177,31 @@ export function AppLayout({ children }: AppLayoutProps) {
                 <button className="flex items-center gap-3 w-full p-2 rounded-lg hover:bg-sidebar-accent transition-colors">
                   <Avatar className="h-9 w-9">
                     <AvatarFallback className="bg-primary text-primary-foreground text-sm">
-                      JD
+                      {getInitials(user?.name || "U")}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 text-left">
                     <p className="text-sm font-medium text-sidebar-foreground">
-                      João da Silva
+                      {user?.name || "Usuário"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Gestor de Frota
+                      {user?.role === "admin" ? "Administrador" : 
+                       user?.role === "gestor_frota" ? "Gestor de Frota" :
+                       user?.role === "motorista" ? "Motorista" :
+                       user?.role === "operacional" ? "Operacional" :
+                       user?.role === "planejamento" ? "Planejamento" : "Usuário"}
                     </p>
                   </div>
                   <ChevronDown className="h-4 w-4 text-muted-foreground" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem>
-                  <Settings className="h-4 w-4 mr-2" />
+                <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+                  <User className="h-4 w-4 mr-2" />
                   Meu Perfil
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-destructive">
+                <DropdownMenuItem className="text-destructive" onClick={handleLogout}>
                   <LogOut className="h-4 w-4 mr-2" />
                   Sair
                 </DropdownMenuItem>
@@ -189,25 +217,23 @@ export function AppLayout({ children }: AppLayoutProps) {
         <header className="hidden lg:flex items-center justify-between px-8 py-4 border-b border-border bg-card">
           <div>
             <h1 className="text-xl font-semibold text-foreground">
-              {navItems.find((item) => item.href === location.pathname)?.label || "Dashboard"}
+              {filteredNavItems.find((item) => item.href === location.pathname)?.label || "Dashboard"}
             </h1>
             <p className="text-sm text-muted-foreground">
               Sistema de Gestão de Frota
             </p>
           </div>
           <div className="flex items-center gap-4">
-            <Button variant="outline" size="icon" className="relative">
-              <Bell className="h-5 w-5" />
-              <span className="absolute -top-1 -right-1 h-5 w-5 bg-destructive text-destructive-foreground text-xs rounded-full flex items-center justify-center">
-                5
-              </span>
-            </Button>
+            <NotificationsDropdown />
           </div>
         </header>
 
         {/* Page Content */}
         <div className="p-6 lg:p-8">{children}</div>
       </main>
+
+      {/* Profile Dialog */}
+      <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
     </div>
   );
 }

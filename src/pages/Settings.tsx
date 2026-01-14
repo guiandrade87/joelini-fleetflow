@@ -54,14 +54,29 @@ interface User {
   role: string;
   status: "ativo" | "inativo";
   lastAccess: string;
+  driverId?: number;
+  driverName?: string;
 }
 
-const mockUsers: User[] = [
+interface Driver {
+  id: number;
+  name: string;
+}
+
+const mockDrivers: Driver[] = [
+  { id: 1, name: "João Silva" },
+  { id: 2, name: "Maria Santos" },
+  { id: 3, name: "Pedro Oliveira" },
+  { id: 4, name: "Ana Costa" },
+  { id: 5, name: "Carlos Souza" },
+];
+
+const initialUsers: User[] = [
   { id: 1, name: "João da Silva", email: "joao@joelini.com.br", role: "admin", status: "ativo", lastAccess: "2024-01-10T14:32:00" },
   { id: 2, name: "Maria Santos", email: "maria@joelini.com.br", role: "gestor_frota", status: "ativo", lastAccess: "2024-01-10T12:15:00" },
-  { id: 3, name: "Carlos Oliveira", email: "carlos@joelini.com.br", role: "motorista", status: "ativo", lastAccess: "2024-01-09T16:45:00" },
+  { id: 3, name: "Carlos Oliveira", email: "carlos@joelini.com.br", role: "motorista", status: "ativo", lastAccess: "2024-01-09T16:45:00", driverId: 1, driverName: "João Silva" },
   { id: 4, name: "Ana Costa", email: "ana@joelini.com.br", role: "operacional", status: "ativo", lastAccess: "2024-01-10T09:20:00" },
-  { id: 5, name: "Roberto Almeida", email: "roberto@joelini.com.br", role: "motorista", status: "inativo", lastAccess: "2024-01-05T11:00:00" },
+  { id: 5, name: "Roberto Almeida", email: "roberto@joelini.com.br", role: "motorista", status: "inativo", lastAccess: "2024-01-05T11:00:00", driverId: 2, driverName: "Maria Santos" },
 ];
 
 const roleLabels: Record<string, string> = {
@@ -81,7 +96,16 @@ const roleColors: Record<string, string> = {
 };
 
 export default function Settings() {
+  const [users, setUsers] = useState<User[]>(initialUsers);
   const [userDialogOpen, setUserDialogOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    role: "",
+    password: "",
+    driverId: "",
+  });
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [slackNotifications, setSlackNotifications] = useState(false);
   const [cnhAlert30, setCnhAlert30] = useState(true);
@@ -89,6 +113,65 @@ export default function Settings() {
   const [cnhAlert7, setCnhAlert7] = useState(true);
   const [maintenanceAlert30, setMaintenanceAlert30] = useState(true);
   const [maintenanceAlert7, setMaintenanceAlert7] = useState(true);
+
+  const handleOpenNewUser = () => {
+    setEditingUser(null);
+    setFormData({ name: "", email: "", role: "", password: "", driverId: "" });
+    setUserDialogOpen(true);
+  };
+
+  const handleEditUser = (user: User) => {
+    setEditingUser(user);
+    setFormData({
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      password: "",
+      driverId: user.driverId?.toString() || "",
+    });
+    setUserDialogOpen(true);
+  };
+
+  const handleSaveUser = () => {
+    if (!formData.name || !formData.email || !formData.role) {
+      return;
+    }
+
+    const selectedDriver = mockDrivers.find(d => d.id.toString() === formData.driverId);
+
+    if (editingUser) {
+      setUsers(prev => prev.map(u => 
+        u.id === editingUser.id 
+          ? { 
+              ...u, 
+              name: formData.name, 
+              email: formData.email, 
+              role: formData.role,
+              driverId: selectedDriver?.id,
+              driverName: selectedDriver?.name,
+            } 
+          : u
+      ));
+    } else {
+      const newUser: User = {
+        id: Math.max(...users.map(u => u.id)) + 1,
+        name: formData.name,
+        email: formData.email,
+        role: formData.role,
+        status: "ativo",
+        lastAccess: new Date().toISOString(),
+        driverId: selectedDriver?.id,
+        driverName: selectedDriver?.name,
+      };
+      setUsers(prev => [...prev, newUser]);
+    }
+
+    setUserDialogOpen(false);
+  };
+
+  const handleDeleteUser = (id: number) => {
+    setUsers(prev => prev.filter(u => u.id !== id));
+  };
 
   return (
     <AppLayout>
@@ -128,27 +211,39 @@ export default function Settings() {
                   </div>
                   <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button>
+                      <Button onClick={handleOpenNewUser}>
                         <Plus className="h-4 w-4 mr-2" />
                         Novo Usuário
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Cadastrar Novo Usuário</DialogTitle>
+                        <DialogTitle>{editingUser ? "Editar Usuário" : "Cadastrar Novo Usuário"}</DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
                           <Label>Nome Completo *</Label>
-                          <Input placeholder="Nome do usuário" />
+                          <Input 
+                            placeholder="Nome do usuário" 
+                            value={formData.name}
+                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label>E-mail *</Label>
-                          <Input type="email" placeholder="email@joelini.com.br" />
+                          <Input 
+                            type="email" 
+                            placeholder="email@joelini.com.br" 
+                            value={formData.email}
+                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label>Perfil de Acesso *</Label>
-                          <Select>
+                          <Select 
+                            value={formData.role} 
+                            onValueChange={(value) => setFormData({ ...formData, role: value, driverId: value !== "motorista" ? "" : formData.driverId })}
+                          >
                             <SelectTrigger>
                               <SelectValue placeholder="Selecione o perfil" />
                             </SelectTrigger>
@@ -161,19 +256,51 @@ export default function Settings() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="space-y-2">
-                          <Label>Senha Temporária *</Label>
-                          <Input type="password" placeholder="••••••••" />
-                          <p className="text-xs text-muted-foreground">
-                            O usuário deverá alterar a senha no primeiro acesso.
-                          </p>
-                        </div>
+                        
+                        {formData.role === "motorista" && (
+                          <div className="space-y-2">
+                            <Label>Vincular ao Motorista</Label>
+                            <Select
+                              value={formData.driverId}
+                              onValueChange={(value) => setFormData({ ...formData, driverId: value })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Selecione o motorista" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {mockDrivers.map((driver) => (
+                                  <SelectItem key={driver.id} value={driver.id.toString()}>
+                                    {driver.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">
+                              Ao vincular, o usuário verá apenas suas próprias viagens
+                            </p>
+                          </div>
+                        )}
+
+                        {!editingUser && (
+                          <div className="space-y-2">
+                            <Label>Senha Temporária *</Label>
+                            <Input 
+                              type="password" 
+                              placeholder="••••••••" 
+                              value={formData.password}
+                              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              O usuário deverá alterar a senha no primeiro acesso.
+                            </p>
+                          </div>
+                        )}
                         <div className="flex gap-3 pt-4">
                           <Button variant="outline" className="flex-1" onClick={() => setUserDialogOpen(false)}>
                             Cancelar
                           </Button>
-                          <Button className="flex-1" onClick={() => setUserDialogOpen(false)}>
-                            Cadastrar
+                          <Button className="flex-1" onClick={handleSaveUser}>
+                            {editingUser ? "Salvar" : "Cadastrar"}
                           </Button>
                         </div>
                       </div>
@@ -194,12 +321,15 @@ export default function Settings() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {mockUsers.map((user) => (
+                      {users.map((user) => (
                         <TableRow key={user.id}>
                           <TableCell>
                             <div>
                               <p className="font-medium">{user.name}</p>
                               <p className="text-sm text-muted-foreground">{user.email}</p>
+                              {user.driverName && (
+                                <p className="text-xs text-primary">Vinculado: {user.driverName}</p>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -218,10 +348,10 @@ export default function Settings() {
                           </TableCell>
                           <TableCell>
                             <div className="flex gap-1">
-                              <Button variant="ghost" size="icon">
+                              <Button variant="ghost" size="icon" onClick={() => handleEditUser(user)}>
                                 <Pencil className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
+                              <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDeleteUser(user.id)}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </div>
