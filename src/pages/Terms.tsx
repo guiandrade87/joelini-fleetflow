@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   Table,
@@ -19,9 +20,18 @@ import {
   DialogTrigger,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import {
   Search,
   FileCheck,
@@ -34,8 +44,12 @@ import {
   Shield,
   Download,
   Eye,
+  Plus,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { toast } from "sonner";
 
 interface Acceptance {
   id: number;
@@ -46,6 +60,25 @@ interface Acceptance {
   dataAceite: string;
   ip: string;
   documento: string;
+}
+
+interface PendingTerm {
+  id: number;
+  usuario: string;
+  cargo: string;
+  email: string;
+  documento: string;
+  enviadoEm: string;
+}
+
+interface TermDocument {
+  id: number;
+  titulo: string;
+  tipo: string;
+  versao: string;
+  conteudo: string;
+  ativo: boolean;
+  atualizadoEm: string;
 }
 
 const mockAcceptances: Acceptance[] = [
@@ -91,15 +124,6 @@ const mockAcceptances: Acceptance[] = [
   },
 ];
 
-interface PendingTerm {
-  id: number;
-  usuario: string;
-  cargo: string;
-  email: string;
-  documento: string;
-  enviadoEm: string;
-}
-
 const mockPendingTerms: PendingTerm[] = [
   {
     id: 1,
@@ -119,16 +143,155 @@ const mockPendingTerms: PendingTerm[] = [
   },
 ];
 
+const defaultTermContent = `TERMO DE RESPONSABILIDADE DE USO DE VEÍCULO DA FROTA JOELINI
+
+Pelo presente instrumento particular, eu, colaborador(a) da JOELINI LTDA., declaro estar ciente e de acordo com as seguintes condições para utilização dos veículos da frota da empresa:
+
+1. CONDIÇÕES DE USO
+1.1. Comprometo-me a utilizar o veículo exclusivamente para fins de trabalho, respeitando as normas de trânsito vigentes.
+1.2. Declaro possuir Carteira Nacional de Habilitação (CNH) válida e compatível com a categoria do veículo.
+1.3. Comprometo-me a realizar o checklist obrigatório antes de cada viagem.
+
+2. RESPONSABILIDADES
+2.1. Sou responsável por qualquer infração de trânsito cometida durante a utilização do veículo.
+2.2. Em caso de sinistro, devo comunicar imediatamente à empresa e seguir os procedimentos estabelecidos.
+2.3. Comprometo-me a manter o veículo em boas condições de conservação e limpeza.
+
+3. PROIBIÇÕES
+3.1. É proibido o uso do veículo sob efeito de álcool ou substâncias entorpecentes.
+3.2. É proibido o transporte de pessoas não autorizadas.
+3.3. É proibida a utilização do veículo para fins particulares sem prévia autorização.
+
+4. PENALIDADES
+O descumprimento das normas estabelecidas neste termo poderá acarretar em medidas disciplinares, conforme regulamento interno da empresa.`;
+
+const initialDocuments: TermDocument[] = [
+  {
+    id: 1,
+    titulo: "Termo de Responsabilidade",
+    tipo: "responsabilidade",
+    versao: "2.1",
+    conteudo: defaultTermContent,
+    ativo: true,
+    atualizadoEm: "2024-01-15",
+  },
+  {
+    id: 2,
+    titulo: "Termo de Uso de Veículos",
+    tipo: "uso_veiculo",
+    versao: "1.0",
+    conteudo: "Normas gerais para utilização dos veículos da frota corporativa.",
+    ativo: true,
+    atualizadoEm: "2023-12-01",
+  },
+  {
+    id: 3,
+    titulo: "Política de Multas",
+    tipo: "politica_frota",
+    versao: "1.2",
+    conteudo: "Política interna para tratamento de multas de trânsito.",
+    ativo: false,
+    atualizadoEm: "2023-11-20",
+  },
+];
+
+const tipoLabels: Record<string, string> = {
+  responsabilidade: "Responsabilidade",
+  uso_veiculo: "Uso de Veículo",
+  politica_frota: "Política de Frota",
+};
+
 export default function Terms() {
   const [searchTerm, setSearchTerm] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [acceptTerms, setAcceptTerms] = useState(false);
+  const [documents, setDocuments] = useState<TermDocument[]>(initialDocuments);
+  
+  // Form state
+  const [termFormOpen, setTermFormOpen] = useState(false);
+  const [editingTerm, setEditingTerm] = useState<TermDocument | null>(null);
+  const [formData, setFormData] = useState({
+    titulo: "",
+    tipo: "",
+    versao: "",
+    conteudo: "",
+    ativo: true,
+  });
 
   const filteredAcceptances = mockAcceptances.filter((acceptance) =>
     acceptance.usuario.toLowerCase().includes(searchTerm.toLowerCase()) ||
     acceptance.veiculo.toLowerCase().includes(searchTerm.toLowerCase()) ||
     acceptance.placa.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const handleOpenNewTerm = () => {
+    setEditingTerm(null);
+    setFormData({
+      titulo: "",
+      tipo: "",
+      versao: "1.0",
+      conteudo: "",
+      ativo: true,
+    });
+    setTermFormOpen(true);
+  };
+
+  const handleEditTerm = (term: TermDocument) => {
+    setEditingTerm(term);
+    setFormData({
+      titulo: term.titulo,
+      tipo: term.tipo,
+      versao: term.versao,
+      conteudo: term.conteudo,
+      ativo: term.ativo,
+    });
+    setTermFormOpen(true);
+  };
+
+  const handleDeleteTerm = (id: number) => {
+    setDocuments((prev) => prev.filter((doc) => doc.id !== id));
+    toast.success("Termo excluído com sucesso!");
+  };
+
+  const handleSaveTerm = () => {
+    if (!formData.titulo || !formData.tipo || !formData.versao) {
+      toast.error("Preencha todos os campos obrigatórios");
+      return;
+    }
+
+    if (editingTerm) {
+      setDocuments((prev) =>
+        prev.map((doc) =>
+          doc.id === editingTerm.id
+            ? {
+                ...doc,
+                ...formData,
+                atualizadoEm: new Date().toISOString().split("T")[0],
+              }
+            : doc
+        )
+      );
+      toast.success("Termo atualizado com sucesso!");
+    } else {
+      const newTerm: TermDocument = {
+        id: Math.max(...documents.map((d) => d.id)) + 1,
+        ...formData,
+        atualizadoEm: new Date().toISOString().split("T")[0],
+      };
+      setDocuments((prev) => [...prev, newTerm]);
+      toast.success("Termo criado com sucesso!");
+    }
+
+    setTermFormOpen(false);
+  };
+
+  const toggleTermStatus = (id: number) => {
+    setDocuments((prev) =>
+      prev.map((doc) =>
+        doc.id === id ? { ...doc, ativo: !doc.ativo } : doc
+      )
+    );
+  };
 
   return (
     <AppLayout>
@@ -182,7 +345,7 @@ export default function Terms() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Documentos Ativos</p>
-                  <p className="text-2xl font-bold">3</p>
+                  <p className="text-2xl font-bold">{documents.filter((d) => d.ativo).length}</p>
                 </div>
               </div>
             </CardContent>
@@ -337,194 +500,182 @@ export default function Terms() {
 
           {/* Documentos */}
           <TabsContent value="documentos">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Documento 1 */}
-              <Card>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-primary/10 rounded-lg">
-                        <Shield className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base">Termo de Responsabilidade</CardTitle>
-                        <CardDescription>Versão 2.1 • Atualizado em 15/01/2024</CardDescription>
-                      </div>
-                    </div>
-                    <Badge className="bg-success/20 text-success">Ativo</Badge>
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <CardTitle className="text-lg font-semibold">Gerenciar Termos e Documentos</CardTitle>
+                    <CardDescription>Crie, edite e gerencie os termos de responsabilidade</CardDescription>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Documento que estabelece as responsabilidades do colaborador no uso de veículos da frota.
-                  </p>
-                  <div className="flex gap-2">
-                    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" size="sm">
-                          <Eye className="h-4 w-4 mr-2" />
-                          Visualizar
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-2xl max-h-[80vh]">
-                        <DialogHeader>
-                          <DialogTitle>Termo de Responsabilidade de Uso de Veículo</DialogTitle>
-                          <DialogDescription>
-                            Versão 2.1 - Atualizado em 15/01/2024
-                          </DialogDescription>
-                        </DialogHeader>
-                        <ScrollArea className="h-[400px] pr-4">
-                          <div className="space-y-4 text-sm">
-                            <p>
-                              <strong>TERMO DE RESPONSABILIDADE DE USO DE VEÍCULO DA FROTA JOELINI</strong>
-                            </p>
-                            <p>
-                              Pelo presente instrumento particular, eu, colaborador(a) da JOELINI LTDA., declaro estar ciente e de acordo com as seguintes condições para utilização dos veículos da frota da empresa:
-                            </p>
-                            <p>
-                              <strong>1. CONDIÇÕES DE USO</strong>
-                            </p>
-                            <p>
-                              1.1. Comprometo-me a utilizar o veículo exclusivamente para fins de trabalho, respeitando as normas de trânsito vigentes.
-                            </p>
-                            <p>
-                              1.2. Declaro possuir Carteira Nacional de Habilitação (CNH) válida e compatível com a categoria do veículo.
-                            </p>
-                            <p>
-                              1.3. Comprometo-me a realizar o checklist obrigatório antes de cada viagem.
-                            </p>
-                            <p>
-                              <strong>2. RESPONSABILIDADES</strong>
-                            </p>
-                            <p>
-                              2.1. Sou responsável por qualquer infração de trânsito cometida durante a utilização do veículo.
-                            </p>
-                            <p>
-                              2.2. Em caso de sinistro, devo comunicar imediatamente à empresa e seguir os procedimentos estabelecidos.
-                            </p>
-                            <p>
-                              2.3. Comprometo-me a manter o veículo em boas condições de conservação e limpeza.
-                            </p>
-                            <p>
-                              <strong>3. PROIBIÇÕES</strong>
-                            </p>
-                            <p>
-                              3.1. É proibido o uso do veículo sob efeito de álcool ou substâncias entorpecentes.
-                            </p>
-                            <p>
-                              3.2. É proibido o transporte de pessoas não autorizadas.
-                            </p>
-                            <p>
-                              3.3. É proibida a utilização do veículo para fins particulares sem prévia autorização.
-                            </p>
-                            <p>
-                              <strong>4. PENALIDADES</strong>
-                            </p>
-                            <p>
-                              O descumprimento das normas estabelecidas neste termo poderá acarretar em medidas disciplinares, conforme regulamento interno da empresa.
-                            </p>
-                            <p className="text-muted-foreground italic">
-                              Declaro ter lido e concordar com todos os termos acima descritos.
-                            </p>
-                          </div>
-                        </ScrollArea>
-                        <div className="border-t pt-4 space-y-4">
-                          <div className="flex items-start gap-3">
-                            <Checkbox
-                              id="accept"
-                              checked={acceptTerms}
-                              onCheckedChange={(checked) => setAcceptTerms(checked as boolean)}
+                  <Dialog open={termFormOpen} onOpenChange={setTermFormOpen}>
+                    <DialogTrigger asChild>
+                      <Button onClick={handleOpenNewTerm}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Novo Termo
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>
+                          {editingTerm ? "Editar Termo" : "Criar Novo Termo"}
+                        </DialogTitle>
+                        <DialogDescription>
+                          Preencha as informações do termo de responsabilidade
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Título *</Label>
+                            <Input
+                              placeholder="Ex: Termo de Responsabilidade"
+                              value={formData.titulo}
+                              onChange={(e) => setFormData({ ...formData, titulo: e.target.value })}
                             />
-                            <label htmlFor="accept" className="text-sm leading-relaxed cursor-pointer">
-                              Declaro que li, entendi e concordo com todos os termos e condições estabelecidos neste documento.
-                            </label>
                           </div>
-                          <div className="flex gap-3">
-                            <Button variant="outline" className="flex-1" onClick={() => setDialogOpen(false)}>
-                              Cancelar
-                            </Button>
-                            <Button className="flex-1" disabled={!acceptTerms} onClick={() => setDialogOpen(false)}>
-                              <CheckCircle2 className="h-4 w-4 mr-2" />
-                              Aceitar Termo
-                            </Button>
+                          <div className="space-y-2">
+                            <Label>Versão *</Label>
+                            <Input
+                              placeholder="Ex: 1.0"
+                              value={formData.versao}
+                              onChange={(e) => setFormData({ ...formData, versao: e.target.value })}
+                            />
                           </div>
                         </div>
-                      </DialogContent>
-                    </Dialog>
-                    <Button variant="outline" size="sm">
-                      <Download className="h-4 w-4 mr-2" />
-                      Download PDF
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Documento 2 */}
-              <Card>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-primary/10 rounded-lg">
-                        <Car className="h-5 w-5 text-primary" />
+                        <div className="space-y-2">
+                          <Label>Tipo *</Label>
+                          <Select
+                            value={formData.tipo}
+                            onValueChange={(value) => setFormData({ ...formData, tipo: value })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione o tipo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="responsabilidade">Responsabilidade</SelectItem>
+                              <SelectItem value="uso_veiculo">Uso de Veículo</SelectItem>
+                              <SelectItem value="politica_frota">Política de Frota</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Conteúdo do Termo</Label>
+                          <Textarea
+                            placeholder="Digite o conteúdo completo do termo..."
+                            value={formData.conteudo}
+                            onChange={(e) => setFormData({ ...formData, conteudo: e.target.value })}
+                            rows={12}
+                          />
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Switch
+                            checked={formData.ativo}
+                            onCheckedChange={(checked) => setFormData({ ...formData, ativo: checked })}
+                          />
+                          <Label>Termo Ativo</Label>
+                        </div>
+                        <div className="flex gap-3 pt-4">
+                          <Button
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => setTermFormOpen(false)}
+                          >
+                            Cancelar
+                          </Button>
+                          <Button className="flex-1" onClick={handleSaveTerm}>
+                            {editingTerm ? "Salvar Alterações" : "Criar Termo"}
+                          </Button>
+                        </div>
                       </div>
-                      <div>
-                        <CardTitle className="text-base">Termo de Uso de Veículos</CardTitle>
-                        <CardDescription>Versão 1.0 • Atualizado em 01/12/2023</CardDescription>
-                      </div>
-                    </div>
-                    <Badge className="bg-success/20 text-success">Ativo</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Normas gerais para utilização dos veículos da frota corporativa.
-                  </p>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm">
-                      <Eye className="h-4 w-4 mr-2" />
-                      Visualizar
-                    </Button>
-                    <Button variant="outline" size="sm">
-                      <Download className="h-4 w-4 mr-2" />
-                      Download PDF
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Documento 3 */}
-              <Card>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-muted rounded-lg">
-                        <FileText className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base">Política de Multas</CardTitle>
-                        <CardDescription>Versão 1.2 • Atualizado em 20/11/2023</CardDescription>
-                      </div>
-                    </div>
-                    <Badge variant="outline">Inativo</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Política interna para tratamento de multas de trânsito.
-                  </p>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm">
-                      <Eye className="h-4 w-4 mr-2" />
-                      Visualizar
-                    </Button>
-                    <Button variant="outline" size="sm">
-                      <Download className="h-4 w-4 mr-2" />
-                      Download PDF
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-lg border border-border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead>Documento</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead>Versão</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Atualizado</TableHead>
+                        <TableHead className="w-[120px]">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {documents.map((doc) => (
+                        <TableRow key={doc.id}>
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 bg-primary/10 rounded-lg">
+                                <Shield className="h-4 w-4 text-primary" />
+                              </div>
+                              <span className="font-medium">{doc.titulo}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {tipoLabels[doc.tipo] || doc.tipo}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-mono">v{doc.versao}</TableCell>
+                          <TableCell>
+                            <Switch
+                              checked={doc.ativo}
+                              onCheckedChange={() => toggleTermStatus(doc.id)}
+                            />
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {new Date(doc.atualizadoEm).toLocaleDateString("pt-BR")}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-1">
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button variant="ghost" size="icon">
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent className="max-w-2xl max-h-[80vh]">
+                                  <DialogHeader>
+                                    <DialogTitle>{doc.titulo}</DialogTitle>
+                                    <DialogDescription>
+                                      Versão {doc.versao} • Atualizado em {new Date(doc.atualizadoEm).toLocaleDateString("pt-BR")}
+                                    </DialogDescription>
+                                  </DialogHeader>
+                                  <ScrollArea className="h-[400px] pr-4">
+                                    <div className="whitespace-pre-wrap text-sm">
+                                      {doc.conteudo}
+                                    </div>
+                                  </ScrollArea>
+                                </DialogContent>
+                              </Dialog>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleEditTerm(doc)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => handleDeleteTerm(doc.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
