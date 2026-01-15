@@ -18,6 +18,7 @@ import {
   X,
   ChevronDown,
   User,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +47,7 @@ const navItems: NavItem[] = [
   { label: "Veículos", href: "/veiculos", icon: <Car className="h-5 w-5" />, roles: ["admin", "gestor_frota", "planejamento", "operacional"] },
   { label: "Motoristas", href: "/motoristas", icon: <Users className="h-5 w-5" />, roles: ["admin", "gestor_frota"] },
   { label: "Viagens", href: "/viagens", icon: <Route className="h-5 w-5" /> },
+  { label: "Diário de Bordo", href: "/diario-bordo", icon: <BookOpen className="h-5 w-5" /> },
   { label: "Abastecimentos", href: "/abastecimentos", icon: <Fuel className="h-5 w-5" /> },
   { label: "Manutenção", href: "/manutencao", icon: <Wrench className="h-5 w-5" />, badge: 3, roles: ["admin", "gestor_frota", "planejamento"] },
   { label: "Ocorrências", href: "/ocorrencias", icon: <AlertTriangle className="h-5 w-5" />, roles: ["admin", "gestor_frota", "planejamento", "operacional"] },

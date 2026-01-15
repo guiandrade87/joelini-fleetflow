@@ -1,10 +1,13 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { toast } from "sonner";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -49,6 +52,8 @@ import {
   Play,
   Square,
   Eye,
+  BookOpen,
+  AlertCircle,
 } from "lucide-react";
 
 interface Trip {
@@ -64,6 +69,8 @@ interface Trip {
   startAt: string;
   endAt: string | null;
   status: "agendada" | "em_andamento" | "finalizada" | "cancelada";
+  tripType: "curta" | "longa";
+  travelLogEnabled: boolean;
 }
 
 const mockTrips: Trip[] = [
@@ -80,20 +87,24 @@ const mockTrips: Trip[] = [
     startAt: "11/12/2024 08:30",
     endAt: null,
     status: "em_andamento",
+    tripType: "curta",
+    travelLogEnabled: false,
   },
   {
     id: "2",
     vehicle: "VW Saveiro",
     plate: "DEF-5678",
     driver: "Carlos Oliveira",
-    origin: "Campinas, SP",
-    destination: "Ribeirão Preto, SP",
-    purpose: "Visita técnica",
+    origin: "São Paulo, SP",
+    destination: "Porto Alegre, RS",
+    purpose: "Entrega interestadual",
     kmInicio: 62100,
-    kmFim: 62345,
+    kmFim: 63450,
     startAt: "10/12/2024 07:00",
-    endAt: "10/12/2024 18:30",
+    endAt: "11/12/2024 18:30",
     status: "finalizada",
+    tripType: "longa",
+    travelLogEnabled: true,
   },
   {
     id: "3",
@@ -108,6 +119,8 @@ const mockTrips: Trip[] = [
     startAt: "10/12/2024 09:00",
     endAt: "10/12/2024 15:00",
     status: "finalizada",
+    tripType: "curta",
+    travelLogEnabled: false,
   },
   {
     id: "4",
@@ -122,6 +135,8 @@ const mockTrips: Trip[] = [
     startAt: "12/12/2024 10:00",
     endAt: null,
     status: "agendada",
+    tripType: "curta",
+    travelLogEnabled: false,
   },
   {
     id: "5",
@@ -129,13 +144,15 @@ const mockTrips: Trip[] = [
     plate: "MNO-7890",
     driver: "Ana Rodrigues",
     origin: "São Paulo, SP",
-    destination: "Jundiaí, SP",
-    purpose: "Reunião com cliente",
+    destination: "Salvador, BA",
+    purpose: "Visita a cliente",
     kmInicio: 38920,
     kmFim: null,
     startAt: "11/12/2024 14:00",
     endAt: null,
     status: "em_andamento",
+    tripType: "longa",
+    travelLogEnabled: true,
   },
 ];
 

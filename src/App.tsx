@@ -14,6 +14,7 @@ const Login = lazy(() => import("./pages/Login"));
 const Vehicles = lazy(() => import("./pages/Vehicles"));
 const Drivers = lazy(() => import("./pages/Drivers"));
 const Trips = lazy(() => import("./pages/Trips"));
+const TravelLog = lazy(() => import("./pages/TravelLog"));
 const Fuelings = lazy(() => import("./pages/Fuelings"));
 const Maintenance = lazy(() => import("./pages/Maintenance"));
 const Reports = lazy(() => import("./pages/Reports"));
@@ -57,6 +58,7 @@ const App = () => (
               <Route path="/veiculos" element={<ProtectedRoute><Vehicles /></ProtectedRoute>} />
               <Route path="/motoristas" element={<ProtectedRoute><Drivers /></ProtectedRoute>} />
               <Route path="/viagens" element={<ProtectedRoute><Trips /></ProtectedRoute>} />
+              <Route path="/diario-bordo" element={<ProtectedRoute><TravelLog /></ProtectedRoute>} />
               <Route path="/abastecimentos" element={<ProtectedRoute><Fuelings /></ProtectedRoute>} />
               <Route path="/manutencao" element={<ProtectedRoute><Maintenance /></ProtectedRoute>} />
               <Route path="/relatorios" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
