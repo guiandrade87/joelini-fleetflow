@@ -17,7 +17,7 @@ const isLovablePreview = window.location.hostname.includes('lovable.app') ||
 // Para modo demo, usamos dados mock
 const DEMO_MODE = isLovablePreview || import.meta.env.VITE_DEMO_MODE === 'true';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3003/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3006/api';
 
 class ApiService {
   private token: string | null = null;
