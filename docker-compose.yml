@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-joelini2024}
       POSTGRES_DB: ${POSTGRES_DB:-frota_joelini}
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init:/docker-entrypoint-initdb.d
@@ -27,10 +27,10 @@ services:
     container_name: joelini_api
     restart: unless-stopped
     ports:
-      - "3003:3003"
+      - "3006:3006"
     environment:
       - NODE_ENV=production
-      - PORT=3003
+      - PORT=3006
       - DATABASE_URL=postgresql://${POSTGRES_USER:-joelini}:${POSTGRES_PASSWORD:-joelini2024}@db:5432/${POSTGRES_DB:-frota_joelini}
       - JWT_SECRET=${JWT_SECRET:-joelini_secret_key_2024_mudar_em_producao}
     volumes:
@@ -46,7 +46,7 @@ services:
     container_name: joelini_app
     restart: unless-stopped
     ports:
-      - "3004:80"
+      - "3007:80"
     environment:
       - NODE_ENV=production
     depends_on:

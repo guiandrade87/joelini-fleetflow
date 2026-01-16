@@ -1,5 +1,15 @@
 # 🚀 Guia de Deploy - Sistema de Gestão de Frota Joelini
 
+## Portas Utilizadas
+
+| Serviço | Porta Interna | Porta Externa | Descrição |
+|---------|---------------|---------------|-----------|
+| PostgreSQL | 5432 | **5434** | Banco de dados |
+| API Backend | 3006 | **3006** | Node.js/Express |
+| Frontend | 80 | **3007** | Nginx/React |
+
+> ⚠️ As portas externas foram configuradas para evitar conflitos com serviços existentes.
+
 ## Pré-requisitos
 
 - Ubuntu 20.04+ ou Debian 11+
@@ -58,10 +68,21 @@ nano .env
 
 **Edite o arquivo `.env`:**
 ```env
+# Database
 POSTGRES_USER=joelini
 POSTGRES_PASSWORD=SENHA_SEGURA_AQUI
 POSTGRES_DB=frota_joelini
+POSTGRES_PORT=5434
+
+# Application
+VITE_API_URL=http://SEU_IP:3006/api
+
+# JWT
 JWT_SECRET=GERAR_CHAVE_SECRETA_LONGA
+
+# Portas (ajuste se necessário)
+API_PORT=3006
+APP_PORT=3007
 ```
 
 > ⚠️ **IMPORTANTE**: Troque as senhas padrão por senhas seguras!
@@ -85,8 +106,11 @@ docker compose logs -f
 # Testar conexão com o banco
 docker compose exec db psql -U joelini -d frota_joelini -c "SELECT COUNT(*) FROM vehicles;"
 
+# Testar API
+curl http://localhost:3006/api/health
+
 # Acessar no navegador
-# http://SEU_IP:3000
+# http://SEU_IP:3007
 ```
 
 ## 🔧 Comandos Úteis
@@ -101,10 +125,13 @@ docker compose down
 docker compose restart
 
 # Ver logs em tempo real
-docker compose logs -f app
+docker compose logs -f app      # Frontend
+docker compose logs -f api      # Backend
+docker compose logs -f db       # Banco
 
 # Acessar shell do container
 docker compose exec app sh
+docker compose exec api sh
 docker compose exec db psql -U joelini -d frota_joelini
 ```
 
@@ -118,13 +145,20 @@ chmod +x scripts/backup.sh scripts/restore.sh
 sudo mkdir -p /var/backups/joelini-frota
 sudo chown $USER:$USER /var/backups/joelini-frota
 
+# Configurar variáveis para backup local
+export POSTGRES_HOST=localhost
+export POSTGRES_PORT=5434
+export POSTGRES_USER=joelini
+export POSTGRES_PASSWORD=sua_senha
+export POSTGRES_DB=frota_joelini
+
 # Executar backup manual
 ./scripts/backup.sh
 
 # Agendar backup diário (crontab)
 crontab -e
 # Adicionar linha:
-0 2 * * * /caminho/para/projeto/scripts/backup.sh >> /var/log/joelini-backup.log 2>&1
+0 2 * * * POSTGRES_HOST=localhost POSTGRES_PORT=5434 POSTGRES_PASSWORD=sua_senha /caminho/para/projeto/scripts/backup.sh >> /var/log/joelini-backup.log 2>&1
 ```
 
 ### Restore
@@ -144,14 +178,15 @@ ls -la /var/backups/joelini-frota/
 ```bash
 # Permitir apenas portas necessárias
 sudo ufw allow 22/tcp    # SSH
-sudo ufw allow 3000/tcp  # Aplicação
+sudo ufw allow 3007/tcp  # Frontend
+# NÃO expor a porta do banco (5434) externamente!
 sudo ufw enable
 ```
 
 ### HTTPS com Nginx (Recomendado)
 
 ```bash
-# Instalar Nginx
+# Instalar Nginx e Certbot
 sudo apt install nginx certbot python3-certbot-nginx -y
 
 # Criar configuração
@@ -164,7 +199,17 @@ server {
     server_name frota.joelini.com.br;
 
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://localhost:3007;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    location /api/ {
+        proxy_pass http://localhost:3006/api/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -212,11 +257,13 @@ docker system prune -a
 ```bash
 # Ver logs detalhados
 docker compose logs --tail=100 app
+docker compose logs --tail=100 api
 docker compose logs --tail=100 db
 
 # Verificar se porta está em uso
-sudo lsof -i :3000
-sudo lsof -i :5432
+sudo lsof -i :3006
+sudo lsof -i :3007
+sudo lsof -i :5434
 ```
 
 ### Banco não conecta
@@ -228,9 +275,34 @@ docker compose ps db
 # Testar conexão
 docker compose exec db pg_isready -U joelini
 
-# Recriar banco (PERDE DADOS!)
-docker compose down -v
-docker compose up -d
+# Acessar banco manualmente
+docker compose exec db psql -U joelini -d frota_joelini
+
+# Verificar tabelas
+docker compose exec db psql -U joelini -d frota_joelini -c "\dt"
+```
+
+### API não responde
+
+```bash
+# Verificar logs da API
+docker compose logs -f api
+
+# Testar health check
+curl http://localhost:3006/api/health
+
+# Reiniciar apenas a API
+docker compose restart api
+```
+
+### Frontend não carrega
+
+```bash
+# Verificar logs do nginx
+docker compose logs -f app
+
+# Verificar se a build foi criada
+docker compose exec app ls -la /usr/share/nginx/html
 ```
 
 ### Resetar tudo
@@ -242,6 +314,26 @@ docker compose down -v --rmi all
 # Subir novamente do zero
 docker compose up -d --build
 ```
+
+## 📝 Estrutura do Banco
+
+Após o deploy, as seguintes tabelas serão criadas:
+
+- `roles` - Perfis de acesso
+- `users` - Usuários do sistema
+- `vehicles` - Veículos
+- `drivers` - Motoristas
+- `trips` - Viagens
+- `checklists` - Checklists de viagem
+- `fuelings` - Abastecimentos
+- `maintenances` - Manutenções
+- `travel_log_expenses` - Diário de Bordo
+- `incidents` - Ocorrências
+- `terms` - Termos cadastrados
+- `acceptances` - Aceites de termos
+- `audit_logs` - Log de auditoria
+- `notifications` - Notificações
+- `settings` - Configurações
 
 ## 📞 Suporte
 

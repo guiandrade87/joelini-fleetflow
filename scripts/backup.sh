@@ -14,7 +14,7 @@ RETENTION_DAYS=30
 
 # Variáveis do banco (ajuste conforme necessário)
 DB_HOST="${POSTGRES_HOST:-localhost}"
-DB_PORT="${POSTGRES_PORT:-5432}"
+DB_PORT="${POSTGRES_PORT:-5434}"
 DB_NAME="${POSTGRES_DB:-frota_joelini}"
 DB_USER="${POSTGRES_USER:-joelini}"
 

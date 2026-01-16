@@ -19,6 +19,7 @@ CREATE TABLE users (
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     role_id INTEGER REFERENCES roles(id),
+    driver_id INTEGER, -- Vinculo com motorista (para usuários tipo motorista)
     phone TEXT,
     avatar_url TEXT,
     active BOOLEAN DEFAULT TRUE,
@@ -72,6 +73,9 @@ CREATE TABLE drivers (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Adicionar FK de users para drivers após criar a tabela drivers
+ALTER TABLE users ADD CONSTRAINT fk_users_driver FOREIGN KEY (driver_id) REFERENCES drivers(id);
+
 -- Viagens
 CREATE TABLE trips (
     id SERIAL PRIMARY KEY,
@@ -86,6 +90,8 @@ CREATE TABLE trips (
     destino TEXT,
     rota TEXT,
     carga TEXT,
+    trip_type TEXT DEFAULT 'curta', -- curta, longa
+    travel_log_enabled BOOLEAN DEFAULT FALSE, -- Diário de bordo habilitado
     status TEXT DEFAULT 'agendada', -- agendada, em_andamento, finalizada, cancelada
     comprovante_url TEXT,
     observacoes TEXT,
@@ -146,6 +152,7 @@ CREATE TABLE fuelings (
 CREATE TABLE maintenances (
     id SERIAL PRIMARY KEY,
     vehicle_id INTEGER REFERENCES vehicles(id) ON DELETE SET NULL,
+    trip_id INTEGER REFERENCES trips(id) ON DELETE SET NULL, -- Vincular manutenção a uma viagem
     tipo TEXT NOT NULL, -- preventiva, corretiva
     categoria TEXT, -- motor, suspensao, freios, eletrica, funilaria, revisao
     descricao TEXT NOT NULL,
@@ -165,6 +172,37 @@ CREATE TABLE maintenances (
     created_by INTEGER REFERENCES users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Diário de Bordo (Despesas de Viagem Longa)
+CREATE TABLE travel_log_expenses (
+    id SERIAL PRIMARY KEY,
+    trip_id INTEGER REFERENCES trips(id) ON DELETE CASCADE NOT NULL,
+    driver_id INTEGER REFERENCES drivers(id) ON DELETE SET NULL,
+    expense_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    expense_type TEXT NOT NULL, -- abastecimento, manutencao, pedagio, alimentacao, hospedagem, outros
+    description TEXT,
+    amount NUMERIC(12,2) NOT NULL,
+    -- Vinculações obrigatórias para tipos específicos
+    fueling_id INTEGER REFERENCES fuelings(id) ON DELETE SET NULL, -- Obrigatório se expense_type = abastecimento
+    maintenance_id INTEGER REFERENCES maintenances(id) ON DELETE SET NULL, -- Obrigatório se expense_type = manutencao
+    -- Comprovante
+    receipt_url TEXT,
+    receipt_number TEXT,
+    -- Localização
+    location TEXT,
+    city TEXT,
+    -- Auditoria
+    created_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    -- Constraints de validação
+    CONSTRAINT check_fueling_link CHECK (
+        expense_type != 'abastecimento' OR fueling_id IS NOT NULL
+    ),
+    CONSTRAINT check_maintenance_link CHECK (
+        expense_type != 'manutencao' OR maintenance_id IS NOT NULL
+    )
 );
 
 -- Ocorrências (Multas e Sinistros)
@@ -190,11 +228,25 @@ CREATE TABLE incidents (
 );
 
 -- Termos de Aceite
+CREATE TABLE terms (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    term_type TEXT NOT NULL, -- uso_veiculo, politica_frota, responsabilidade, outros
+    version TEXT DEFAULT '1.0',
+    active BOOLEAN DEFAULT TRUE,
+    created_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Aceites de Termos
 CREATE TABLE acceptances (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id),
     driver_id INTEGER REFERENCES drivers(id),
     vehicle_id INTEGER REFERENCES vehicles(id),
+    term_id INTEGER REFERENCES terms(id),
     termo_tipo TEXT NOT NULL, -- uso_veiculo, politica_frota, responsabilidade
     termo_versao TEXT DEFAULT '1.0',
     termo_conteudo TEXT,
@@ -251,15 +303,22 @@ CREATE INDEX idx_trips_start_at ON trips(start_at);
 CREATE INDEX idx_trips_status ON trips(status);
 CREATE INDEX idx_trips_vehicle_id ON trips(vehicle_id);
 CREATE INDEX idx_trips_driver_id ON trips(driver_id);
+CREATE INDEX idx_trips_trip_type ON trips(trip_type);
 CREATE INDEX idx_fuelings_vehicle_id ON fuelings(vehicle_id);
 CREATE INDEX idx_fuelings_data ON fuelings(data);
+CREATE INDEX idx_fuelings_trip_id ON fuelings(trip_id);
 CREATE INDEX idx_maintenances_vehicle_id ON maintenances(vehicle_id);
 CREATE INDEX idx_maintenances_proxima_data ON maintenances(proxima_data);
 CREATE INDEX idx_maintenances_status ON maintenances(status);
+CREATE INDEX idx_maintenances_trip_id ON maintenances(trip_id);
 CREATE INDEX idx_incidents_vehicle_id ON incidents(vehicle_id);
+CREATE INDEX idx_travel_log_trip_id ON travel_log_expenses(trip_id);
+CREATE INDEX idx_travel_log_expense_type ON travel_log_expenses(expense_type);
+CREATE INDEX idx_travel_log_expense_date ON travel_log_expenses(expense_date);
 CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);
 CREATE INDEX idx_audit_logs_entity ON audit_logs(entity);
 CREATE INDEX idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX idx_terms_active ON terms(active);
 
 -- Função para atualizar updated_at automaticamente
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -277,3 +336,5 @@ CREATE TRIGGER update_drivers_updated_at BEFORE UPDATE ON drivers FOR EACH ROW E
 CREATE TRIGGER update_trips_updated_at BEFORE UPDATE ON trips FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_maintenances_updated_at BEFORE UPDATE ON maintenances FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_incidents_updated_at BEFORE UPDATE ON incidents FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_terms_updated_at BEFORE UPDATE ON terms FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_travel_log_updated_at BEFORE UPDATE ON travel_log_expenses FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

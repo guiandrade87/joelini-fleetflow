@@ -11,10 +11,10 @@ RUN npm install --omit=dev
 COPY src ./src
 
 # Criar diretório de uploads
-RUN mkdir -p uploads/vehicles uploads/drivers uploads/documents uploads/incidents
+RUN mkdir -p uploads/vehicles uploads/drivers uploads/documents uploads/incidents uploads/receipts
 
-# Expor porta
-EXPOSE 3003
+# Expor porta (configurável via ENV)
+EXPOSE 3006
 
 # Iniciar aplicação
 CMD ["node", "src/index.js"]
