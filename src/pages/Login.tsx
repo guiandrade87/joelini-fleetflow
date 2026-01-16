@@ -7,28 +7,41 @@ import { Checkbox } from "@/components/ui/checkbox";
 import logoJoelini from "@/assets/logo-joelini.png";
 import { Eye, EyeOff, LogIn } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Login() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError("");
 
-    // Simulating login - will be replaced with actual auth
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      await login(email, password);
       toast({
         title: "Login realizado com sucesso!",
         description: "Bem-vindo ao Sistema de Gestão de Frota.",
       });
       navigate("/");
-    }, 1500);
+    } catch (err: any) {
+      const errorMessage = err?.message || "Credenciais inválidas";
+      setError(errorMessage);
+      toast({
+        title: "Erro no login",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -86,6 +99,12 @@ export default function Login() {
               Digite suas credenciais para acessar
             </p>
           </div>
+
+          {error && (
+            <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md border border-destructive/20">
+              {error}
+            </div>
+          )}
 
           <form onSubmit={handleLogin} className="space-y-5">
             <div className="space-y-2">

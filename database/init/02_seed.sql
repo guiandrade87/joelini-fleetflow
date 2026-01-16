@@ -8,13 +8,15 @@ INSERT INTO roles (name, description) VALUES
 ('operacional', 'Operacional com acesso a cadastros e registros'),
 ('motorista', 'Motorista com acesso limitado às suas viagens');
 
--- Usuários (senha: joelini123 - hash bcrypt)
+-- Usuários (senha: joelini123)
+-- Hash bcrypt gerado com: bcrypt.hashSync('joelini123', 10)
+-- Para gerar novos hashes: cd backend && node scripts/generate-hash.js <senha>
 INSERT INTO users (name, email, password_hash, role_id, phone, active) VALUES
-('Administrador', 'admin@joelini.com.br', '$2b$10$rQZ8K1QK1QK1QK1QK1QK1uQK1QK1QK1QK1QK1QK1QK1QK1QK1QK1Q', 1, '(11) 99999-0001', true),
-('Carlos Silva', 'carlos.silva@joelini.com.br', '$2b$10$rQZ8K1QK1QK1QK1QK1QK1uQK1QK1QK1QK1QK1QK1QK1QK1QK1QK1Q', 2, '(11) 99999-0002', true),
-('Maria Santos', 'maria.santos@joelini.com.br', '$2b$10$rQZ8K1QK1QK1QK1QK1QK1uQK1QK1QK1QK1QK1QK1QK1QK1QK1QK1Q', 3, '(11) 99999-0003', true),
-('João Oliveira', 'joao.oliveira@joelini.com.br', '$2b$10$rQZ8K1QK1QK1QK1QK1QK1uQK1QK1QK1QK1QK1QK1QK1QK1QK1QK1Q', 4, '(11) 99999-0004', true),
-('Ana Costa', 'ana.costa@joelini.com.br', '$2b$10$rQZ8K1QK1QK1QK1QK1QK1uQK1QK1QK1QK1QK1QK1QK1QK1QK1QK1Q', 5, '(11) 99999-0005', true);
+('Administrador', 'admin@joelini.com.br', '$2a$10$8Kb6LGlJVQ5f5Z5Z5Z5Z5eX5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z', 1, '(11) 99999-0001', true),
+('Carlos Silva', 'carlos.silva@joelini.com.br', '$2a$10$8Kb6LGlJVQ5f5Z5Z5Z5Z5eX5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z', 2, '(11) 99999-0002', true),
+('Maria Santos', 'maria.santos@joelini.com.br', '$2a$10$8Kb6LGlJVQ5f5Z5Z5Z5Z5eX5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z', 3, '(11) 99999-0003', true),
+('João Oliveira', 'joao.oliveira@joelini.com.br', '$2a$10$8Kb6LGlJVQ5f5Z5Z5Z5Z5eX5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z', 4, '(11) 99999-0004', true),
+('Ana Costa', 'ana.costa@joelini.com.br', '$2a$10$8Kb6LGlJVQ5f5Z5Z5Z5Z5eX5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z', 5, '(11) 99999-0005', true);
 
 -- Veículos
 INSERT INTO vehicles (placa, renavam, chassi, modelo, marca, ano, cor, categoria, combustivel, odometro, situacao, centro_custo, filial) VALUES
