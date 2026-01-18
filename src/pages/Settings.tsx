@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,8 +16,18 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -29,7 +39,6 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Separator } from "@/components/ui/separator";
 import {
   Users,
   Shield,
@@ -41,43 +50,25 @@ import {
   Trash2,
   Check,
   X,
-  Mail,
-  Slack,
-  MapPin,
-  Building2,
+  Loader2,
 } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
 
 interface User {
-  id: number;
+  id: string;
   name: string;
   email: string;
   role: string;
-  status: "ativo" | "inativo";
-  lastAccess: string;
-  driverId?: number;
-  driverName?: string;
+  active: boolean;
+  last_login?: string;
+  driver_id?: string;
 }
 
 interface Driver {
-  id: number;
+  id: string;
   name: string;
 }
-
-const mockDrivers: Driver[] = [
-  { id: 1, name: "João Silva" },
-  { id: 2, name: "Maria Santos" },
-  { id: 3, name: "Pedro Oliveira" },
-  { id: 4, name: "Ana Costa" },
-  { id: 5, name: "Carlos Souza" },
-];
-
-const initialUsers: User[] = [
-  { id: 1, name: "João da Silva", email: "joao@joelini.com.br", role: "admin", status: "ativo", lastAccess: "2024-01-10T14:32:00" },
-  { id: 2, name: "Maria Santos", email: "maria@joelini.com.br", role: "gestor_frota", status: "ativo", lastAccess: "2024-01-10T12:15:00" },
-  { id: 3, name: "Carlos Oliveira", email: "carlos@joelini.com.br", role: "motorista", status: "ativo", lastAccess: "2024-01-09T16:45:00", driverId: 1, driverName: "João Silva" },
-  { id: 4, name: "Ana Costa", email: "ana@joelini.com.br", role: "operacional", status: "ativo", lastAccess: "2024-01-10T09:20:00" },
-  { id: 5, name: "Roberto Almeida", email: "roberto@joelini.com.br", role: "motorista", status: "inativo", lastAccess: "2024-01-05T11:00:00", driverId: 2, driverName: "Maria Santos" },
-];
 
 const roleLabels: Record<string, string> = {
   admin: "Administrador",
@@ -96,9 +87,17 @@ const roleColors: Record<string, string> = {
 };
 
 export default function Settings() {
-  const [users, setUsers] = useState<User[]>(initialUsers);
+  const [users, setUsers] = useState<User[]>([]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [settings, setSettings] = useState<Record<string, { value: string; description: string }>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  
   const [userDialogOpen, setUserDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -106,13 +105,32 @@ export default function Settings() {
     password: "",
     driverId: "",
   });
-  const [emailNotifications, setEmailNotifications] = useState(true);
-  const [slackNotifications, setSlackNotifications] = useState(false);
-  const [cnhAlert30, setCnhAlert30] = useState(true);
-  const [cnhAlert15, setCnhAlert15] = useState(true);
-  const [cnhAlert7, setCnhAlert7] = useState(true);
-  const [maintenanceAlert30, setMaintenanceAlert30] = useState(true);
-  const [maintenanceAlert7, setMaintenanceAlert7] = useState(true);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [usersData, driversRes, settingsData] = await Promise.all([
+        api.getUsers(),
+        api.getDrivers({ limit: 100 }),
+        api.getSettings()
+      ]);
+      setUsers(usersData);
+      setDrivers(driversRes.data);
+      setSettings(settingsData);
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar os dados.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleOpenNewUser = () => {
     setEditingUser(null);
@@ -127,51 +145,109 @@ export default function Settings() {
       email: user.email,
       role: user.role,
       password: "",
-      driverId: user.driverId?.toString() || "",
+      driverId: user.driver_id || "",
     });
     setUserDialogOpen(true);
   };
 
-  const handleSaveUser = () => {
+  const handleSaveUser = async () => {
     if (!formData.name || !formData.email || !formData.role) {
+      toast({
+        title: "Erro",
+        description: "Preencha todos os campos obrigatórios.",
+        variant: "destructive",
+      });
       return;
     }
 
-    const selectedDriver = mockDrivers.find(d => d.id.toString() === formData.driverId);
-
-    if (editingUser) {
-      setUsers(prev => prev.map(u => 
-        u.id === editingUser.id 
-          ? { 
-              ...u, 
-              name: formData.name, 
-              email: formData.email, 
-              role: formData.role,
-              driverId: selectedDriver?.id,
-              driverName: selectedDriver?.name,
-            } 
-          : u
-      ));
-    } else {
-      const newUser: User = {
-        id: Math.max(...users.map(u => u.id)) + 1,
-        name: formData.name,
-        email: formData.email,
-        role: formData.role,
-        status: "ativo",
-        lastAccess: new Date().toISOString(),
-        driverId: selectedDriver?.id,
-        driverName: selectedDriver?.name,
-      };
-      setUsers(prev => [...prev, newUser]);
+    if (!editingUser && !formData.password) {
+      toast({
+        title: "Erro",
+        description: "Informe a senha para o novo usuário.",
+        variant: "destructive",
+      });
+      return;
     }
 
-    setUserDialogOpen(false);
+    try {
+      setSaving(true);
+      
+      if (editingUser) {
+        await api.updateUser(editingUser.id, {
+          name: formData.name,
+          email: formData.email,
+          role: formData.role,
+          driver_id: formData.driverId || null,
+        });
+        toast({
+          title: "Sucesso",
+          description: "Usuário atualizado com sucesso.",
+        });
+      } else {
+        await api.createUser({
+          name: formData.name,
+          email: formData.email,
+          role: formData.role,
+          password: formData.password,
+          driver_id: formData.driverId || null,
+        });
+        toast({
+          title: "Sucesso",
+          description: "Usuário criado com sucesso.",
+        });
+      }
+
+      await loadData();
+      setUserDialogOpen(false);
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao salvar usuário.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDeleteUser = (id: number) => {
-    setUsers(prev => prev.filter(u => u.id !== id));
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+
+    try {
+      setSaving(true);
+      await api.deleteUser(userToDelete.id);
+      await loadData();
+      setDeleteDialogOpen(false);
+      setUserToDelete(null);
+      toast({
+        title: "Sucesso",
+        description: "Usuário excluído com sucesso.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao excluir usuário.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return "-";
+    return new Date(dateStr).toLocaleString("pt-BR");
+  };
+
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -209,103 +285,10 @@ export default function Settings() {
                     <CardTitle className="text-lg font-semibold">Usuários do Sistema</CardTitle>
                     <CardDescription>Gerencie os usuários e suas permissões de acesso</CardDescription>
                   </div>
-                  <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button onClick={handleOpenNewUser}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        Novo Usuário
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>{editingUser ? "Editar Usuário" : "Cadastrar Novo Usuário"}</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                          <Label>Nome Completo *</Label>
-                          <Input 
-                            placeholder="Nome do usuário" 
-                            value={formData.name}
-                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>E-mail *</Label>
-                          <Input 
-                            type="email" 
-                            placeholder="email@joelini.com.br" 
-                            value={formData.email}
-                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Perfil de Acesso *</Label>
-                          <Select 
-                            value={formData.role} 
-                            onValueChange={(value) => setFormData({ ...formData, role: value, driverId: value !== "motorista" ? "" : formData.driverId })}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Selecione o perfil" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="admin">Administrador</SelectItem>
-                              <SelectItem value="gestor_frota">Gestor de Frota</SelectItem>
-                              <SelectItem value="planejamento">Planejamento</SelectItem>
-                              <SelectItem value="operacional">Operacional</SelectItem>
-                              <SelectItem value="motorista">Motorista</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        
-                        {formData.role === "motorista" && (
-                          <div className="space-y-2">
-                            <Label>Vincular ao Motorista</Label>
-                            <Select
-                              value={formData.driverId}
-                              onValueChange={(value) => setFormData({ ...formData, driverId: value })}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Selecione o motorista" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {mockDrivers.map((driver) => (
-                                  <SelectItem key={driver.id} value={driver.id.toString()}>
-                                    {driver.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <p className="text-xs text-muted-foreground">
-                              Ao vincular, o usuário verá apenas suas próprias viagens
-                            </p>
-                          </div>
-                        )}
-
-                        {!editingUser && (
-                          <div className="space-y-2">
-                            <Label>Senha Temporária *</Label>
-                            <Input 
-                              type="password" 
-                              placeholder="••••••••" 
-                              value={formData.password}
-                              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                            />
-                            <p className="text-xs text-muted-foreground">
-                              O usuário deverá alterar a senha no primeiro acesso.
-                            </p>
-                          </div>
-                        )}
-                        <div className="flex gap-3 pt-4">
-                          <Button variant="outline" className="flex-1" onClick={() => setUserDialogOpen(false)}>
-                            Cancelar
-                          </Button>
-                          <Button className="flex-1" onClick={handleSaveUser}>
-                            {editingUser ? "Salvar" : "Cadastrar"}
-                          </Button>
-                        </div>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
+                  <Button onClick={handleOpenNewUser}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Novo Usuário
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent>
@@ -327,31 +310,38 @@ export default function Settings() {
                             <div>
                               <p className="font-medium">{user.name}</p>
                               <p className="text-sm text-muted-foreground">{user.email}</p>
-                              {user.driverName && (
-                                <p className="text-xs text-primary">Vinculado: {user.driverName}</p>
-                              )}
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge className={roleColors[user.role]}>
-                              {roleLabels[user.role]}
+                            <Badge className={roleColors[user.role] || "bg-muted"}>
+                              {roleLabels[user.role] || user.role}
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <Badge variant={user.status === "ativo" ? "default" : "secondary"} className={user.status === "ativo" ? "bg-success/20 text-success" : ""}>
-                              {user.status === "ativo" ? "Ativo" : "Inativo"}
+                            <Badge 
+                              variant={user.active ? "default" : "secondary"} 
+                              className={user.active ? "bg-success/20 text-success" : ""}
+                            >
+                              {user.active ? "Ativo" : "Inativo"}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-muted-foreground">
-                            {new Date(user.lastAccess).toLocaleDateString("pt-BR")}{" "}
-                            às {new Date(user.lastAccess).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                            {formatDate(user.last_login)}
                           </TableCell>
                           <TableCell>
                             <div className="flex gap-1">
                               <Button variant="ghost" size="icon" onClick={() => handleEditUser(user)}>
                                 <Pencil className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDeleteUser(user.id)}>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="text-destructive hover:text-destructive" 
+                                onClick={() => {
+                                  setUserToDelete(user);
+                                  setDeleteDialogOpen(true);
+                                }}
+                              >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </div>
@@ -405,9 +395,9 @@ export default function Settings() {
                           {row.permissions.map((perm, j) => (
                             <TableCell key={j} className="text-center">
                               {perm ? (
-                                <Check className="h-5 w-5 text-success mx-auto" />
+                                <Check className="h-4 w-4 text-success mx-auto" />
                               ) : (
-                                <X className="h-5 w-5 text-muted-foreground/50 mx-auto" />
+                                <X className="h-4 w-4 text-muted-foreground mx-auto" />
                               )}
                             </TableCell>
                           ))}
@@ -422,223 +412,274 @@ export default function Settings() {
 
           {/* Notificações */}
           <TabsContent value="notificacoes">
-            <div className="grid gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg font-semibold">Canais de Notificação</CardTitle>
-                  <CardDescription>Configure como deseja receber as notificações do sistema</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold">Configurações de Notificações</CardTitle>
+                <CardDescription>Configure como você deseja receber alertas</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-4">
+                  <h4 className="font-medium">Canais de Notificação</h4>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-primary/10 rounded-lg">
-                        <Mail className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <p className="font-medium">Notificações por E-mail</p>
-                        <p className="text-sm text-muted-foreground">Receba alertas no seu e-mail corporativo</p>
-                      </div>
+                    <div>
+                      <p className="font-medium">E-mail</p>
+                      <p className="text-sm text-muted-foreground">Receber notificações por e-mail</p>
                     </div>
-                    <Switch checked={emailNotifications} onCheckedChange={setEmailNotifications} />
+                    <Switch defaultChecked />
                   </div>
-                  <Separator />
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-muted rounded-lg">
-                        <Slack className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="font-medium">Integração Slack</p>
-                        <p className="text-sm text-muted-foreground">Envie alertas para um canal do Slack</p>
-                      </div>
+                    <div>
+                      <p className="font-medium">Slack</p>
+                      <p className="text-sm text-muted-foreground">Integração com canal do Slack</p>
                     </div>
-                    <Switch checked={slackNotifications} onCheckedChange={setSlackNotifications} />
+                    <Switch />
                   </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg font-semibold">Alertas de CNH</CardTitle>
-                  <CardDescription>Configure quando deseja ser alertado sobre vencimento de CNH</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
+                </div>
+                
+                <div className="space-y-4">
+                  <h4 className="font-medium">Alertas de CNH</h4>
                   <div className="flex items-center justify-between">
                     <p className="text-sm">30 dias antes do vencimento</p>
-                    <Switch checked={cnhAlert30} onCheckedChange={setCnhAlert30} />
+                    <Switch defaultChecked />
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm">15 dias antes do vencimento</p>
-                    <Switch checked={cnhAlert15} onCheckedChange={setCnhAlert15} />
+                    <Switch defaultChecked />
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm">7 dias antes do vencimento</p>
-                    <Switch checked={cnhAlert7} onCheckedChange={setCnhAlert7} />
+                    <Switch defaultChecked />
                   </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg font-semibold">Alertas de Manutenção</CardTitle>
-                  <CardDescription>Configure quando deseja ser alertado sobre manutenções programadas</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
+                </div>
+                
+                <div className="space-y-4">
+                  <h4 className="font-medium">Alertas de Manutenção</h4>
                   <div className="flex items-center justify-between">
-                    <p className="text-sm">30 dias antes da manutenção</p>
-                    <Switch checked={maintenanceAlert30} onCheckedChange={setMaintenanceAlert30} />
+                    <p className="text-sm">30 dias antes da data agendada</p>
+                    <Switch defaultChecked />
                   </div>
                   <div className="flex items-center justify-between">
-                    <p className="text-sm">7 dias antes da manutenção</p>
-                    <Switch checked={maintenanceAlert7} onCheckedChange={setMaintenanceAlert7} />
+                    <p className="text-sm">7 dias antes da data agendada</p>
+                    <Switch defaultChecked />
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Integrações */}
           <TabsContent value="integracoes">
-            <div className="grid gap-6">
-              <Card>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-primary/10 rounded-lg">
-                        <MapPin className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base">GPS / Telemetria</CardTitle>
-                        <CardDescription>Integração com sistema de rastreamento veicular</CardDescription>
-                      </div>
-                    </div>
-                    <Badge variant="outline">Não Configurado</Badge>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold">Integrações</CardTitle>
+                <CardDescription>Conecte o sistema a outras ferramentas</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div>
+                    <p className="font-medium">GPS / Telemetria</p>
+                    <p className="text-sm text-muted-foreground">Integração com rastreadores</p>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Conecte seu sistema de GPS para receber dados de localização e quilometragem automaticamente.
-                  </p>
-                  <Button variant="outline">Configurar Integração</Button>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-primary/10 rounded-lg">
-                        <Building2 className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base">Sistema ERP</CardTitle>
-                        <CardDescription>Integração com ERP corporativo</CardDescription>
-                      </div>
-                    </div>
-                    <Badge variant="outline">Não Configurado</Badge>
+                  <Badge variant="outline">Em breve</Badge>
+                </div>
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div>
+                    <p className="font-medium">ERP</p>
+                    <p className="text-sm text-muted-foreground">Integração com sistema financeiro</p>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Sincronize centros de custo e despesas com seu sistema ERP.
-                  </p>
-                  <Button variant="outline">Configurar Integração</Button>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-muted rounded-lg">
-                        <Slack className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base">Slack</CardTitle>
-                        <CardDescription>Notificações via Slack</CardDescription>
-                      </div>
-                    </div>
-                    <Badge variant="outline">Não Configurado</Badge>
+                  <Badge variant="outline">Em breve</Badge>
+                </div>
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div>
+                    <p className="font-medium">Slack</p>
+                    <p className="text-sm text-muted-foreground">Notificações via Slack</p>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Receba alertas e notificações diretamente no seu workspace do Slack.
-                  </p>
-                  <Button variant="outline">Configurar Integração</Button>
-                </CardContent>
-              </Card>
-            </div>
+                  <Button variant="outline" size="sm">Configurar</Button>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Sistema */}
           <TabsContent value="sistema">
-            <div className="grid gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg font-semibold">Parâmetros do Sistema</CardTitle>
-                  <CardDescription>Configure os parâmetros gerais do sistema</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <Label>KM para Manutenção Preventiva</Label>
-                      <Input type="number" defaultValue="10000" />
-                      <p className="text-xs text-muted-foreground">
-                        Intervalo de km para alertas de manutenção preventiva
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Tolerância de Discrepância KM</Label>
-                      <Input type="number" defaultValue="50" />
-                      <p className="text-xs text-muted-foreground">
-                        Diferença máxima tolerada entre registros de km
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Tamanho Máximo de Upload (MB)</Label>
-                      <Input type="number" defaultValue="5" />
-                      <p className="text-xs text-muted-foreground">
-                        Tamanho máximo permitido para uploads de arquivos
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Dias de Retenção de Logs</Label>
-                      <Input type="number" defaultValue="90" />
-                      <p className="text-xs text-muted-foreground">
-                        Período de retenção dos logs de auditoria
-                      </p>
-                    </div>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold">Parâmetros do Sistema</CardTitle>
+                <CardDescription>Configure os parâmetros gerais do sistema</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid gap-4">
+                  <div className="space-y-2">
+                    <Label>Nome da Empresa</Label>
+                    <Input 
+                      defaultValue={settings.company_name?.value || "Joelini Transportes"} 
+                      placeholder="Nome da empresa"
+                    />
                   </div>
-                  <div className="flex justify-end">
-                    <Button>Salvar Configurações</Button>
+                  <div className="space-y-2">
+                    <Label>E-mail para Notificações</Label>
+                    <Input 
+                      type="email"
+                      defaultValue={settings.notification_email?.value || ""} 
+                      placeholder="email@empresa.com.br"
+                    />
                   </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg font-semibold">Backup e Restauração</CardTitle>
-                  <CardDescription>Gerencie os backups do sistema</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between p-4 rounded-lg border border-border">
-                    <div>
-                      <p className="font-medium">Backup Automático</p>
-                      <p className="text-sm text-muted-foreground">Último backup: 10/01/2024 às 03:00</p>
-                    </div>
-                    <Badge className="bg-success/20 text-success">Ativo</Badge>
+                  <div className="space-y-2">
+                    <Label>Intervalo Padrão de Manutenção (km)</Label>
+                    <Input 
+                      type="number"
+                      defaultValue={settings.maintenance_interval_km?.value || "10000"} 
+                    />
                   </div>
-                  <div className="flex gap-3">
-                    <Button variant="outline">Executar Backup Manual</Button>
-                    <Button variant="outline">Restaurar Backup</Button>
+                  <div className="space-y-2">
+                    <Label>Limite de Upload (MB)</Label>
+                    <Input 
+                      type="number"
+                      defaultValue={settings.upload_limit_mb?.value || "10"} 
+                    />
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                  <div className="space-y-2">
+                    <Label>Retenção de Logs (dias)</Label>
+                    <Input 
+                      type="number"
+                      defaultValue={settings.log_retention_days?.value || "365"} 
+                    />
+                  </div>
+                </div>
+                
+                <div className="pt-4 border-t space-y-4">
+                  <h4 className="font-medium">Backup e Restauração</h4>
+                  <div className="flex gap-4">
+                    <Button variant="outline">
+                      Fazer Backup
+                    </Button>
+                    <Button variant="outline">
+                      Restaurar Backup
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* User Dialog */}
+      <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingUser ? "Editar Usuário" : "Cadastrar Novo Usuário"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Nome Completo *</Label>
+              <Input 
+                placeholder="Nome do usuário" 
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>E-mail *</Label>
+              <Input 
+                type="email" 
+                placeholder="email@joelini.com.br" 
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Perfil de Acesso *</Label>
+              <Select 
+                value={formData.role} 
+                onValueChange={(value) => setFormData({ ...formData, role: value, driverId: value !== "motorista" ? "" : formData.driverId })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o perfil" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Administrador</SelectItem>
+                  <SelectItem value="gestor_frota">Gestor de Frota</SelectItem>
+                  <SelectItem value="planejamento">Planejamento</SelectItem>
+                  <SelectItem value="operacional">Operacional</SelectItem>
+                  <SelectItem value="motorista">Motorista</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {formData.role === "motorista" && (
+              <div className="space-y-2">
+                <Label>Vincular ao Motorista</Label>
+                <Select
+                  value={formData.driverId}
+                  onValueChange={(value) => setFormData({ ...formData, driverId: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o motorista" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {drivers.map((driver) => (
+                      <SelectItem key={driver.id} value={driver.id}>
+                        {driver.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Ao vincular, o usuário verá apenas suas próprias viagens
+                </p>
+              </div>
+            )}
+
+            {!editingUser && (
+              <div className="space-y-2">
+                <Label>Senha *</Label>
+                <Input 
+                  type="password" 
+                  placeholder="••••••••" 
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  O usuário deverá alterar a senha no primeiro acesso.
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUserDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveUser} disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {editingUser ? "Salvar" : "Cadastrar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete User Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir usuário?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação não pode ser desfeita. O usuário "{userToDelete?.name}" será permanentemente removido.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteUser} 
+              className="bg-destructive hover:bg-destructive/90"
+              disabled={saving}
+            >
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

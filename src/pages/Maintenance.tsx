@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,98 +58,40 @@ import {
   Trash2,
   Play,
   XCircle,
+  Loader2,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
 
 interface Maintenance {
   id: string;
-  vehicle: string;
-  plate: string;
-  tipo: "preventiva" | "corretiva";
-  descricao: string;
-  fornecedor: string;
-  custo: number;
-  dataExec: string;
-  proximaData: string | null;
-  status: "agendado" | "em_execucao" | "concluida" | "cancelada";
+  vehicle_id: string;
+  vehicle_plate?: string;
+  vehicle_model?: string;
+  type: "preventiva" | "corretiva";
+  description: string;
+  supplier?: string;
+  estimated_cost?: number;
+  actual_cost?: number;
+  scheduled_date: string;
+  start_date?: string;
+  completion_date?: string;
+  next_maintenance_date?: string;
+  status: "agendada" | "em_andamento" | "concluida" | "cancelada";
 }
 
-const initialMaintenances: Maintenance[] = [
-  {
-    id: "1",
-    vehicle: "Fiat Ducato",
-    plate: "GHI-9012",
-    tipo: "preventiva",
-    descricao: "Revisão 50.000km completa",
-    fornecedor: "Concessionária Fiat",
-    custo: 1850.0,
-    dataExec: "14/12/2024",
-    proximaData: "14/06/2025",
-    status: "agendado",
-  },
-  {
-    id: "2",
-    vehicle: "VW Saveiro",
-    plate: "DEF-5678",
-    tipo: "preventiva",
-    descricao: "Troca de óleo e filtros",
-    fornecedor: "Auto Center Silva",
-    custo: 450.0,
-    dataExec: "18/12/2024",
-    proximaData: "18/03/2025",
-    status: "agendado",
-  },
-  {
-    id: "3",
-    vehicle: "Fiat Strada",
-    plate: "ABC-1234",
-    tipo: "corretiva",
-    descricao: "Reparo no sistema de freios",
-    fornecedor: "Freios Express",
-    custo: 780.0,
-    dataExec: "08/12/2024",
-    proximaData: null,
-    status: "concluida",
-  },
-  {
-    id: "4",
-    vehicle: "Renault Master",
-    plate: "JKL-3456",
-    tipo: "preventiva",
-    descricao: "Alinhamento e balanceamento",
-    fornecedor: "Pneu Mania",
-    custo: 320.0,
-    dataExec: "20/12/2024",
-    proximaData: "20/06/2025",
-    status: "agendado",
-  },
-  {
-    id: "5",
-    vehicle: "Fiat Toro",
-    plate: "MNO-7890",
-    tipo: "corretiva",
-    descricao: "Substituição da bateria",
-    fornecedor: "Baterias Prime",
-    custo: 650.0,
-    dataExec: "05/12/2024",
-    proximaData: null,
-    status: "concluida",
-  },
-];
-
-const mockVehicles = [
-  { id: "1", name: "Fiat Strada", plate: "ABC-1234" },
-  { id: "2", name: "VW Saveiro", plate: "DEF-5678" },
-  { id: "3", name: "Fiat Ducato", plate: "GHI-9012" },
-  { id: "4", name: "Renault Master", plate: "JKL-3456" },
-  { id: "5", name: "Fiat Toro", plate: "MNO-7890" },
-];
+interface Vehicle {
+  id: string;
+  plate: string;
+  model: string;
+  brand: string;
+}
 
 const getStatusBadge = (status: Maintenance["status"]) => {
   switch (status) {
-    case "agendado":
-      return <Badge className="bg-warning/10 text-warning border-0">Agendado</Badge>;
-    case "em_execucao":
+    case "agendada":
+      return <Badge className="bg-warning/10 text-warning border-0">Agendada</Badge>;
+    case "em_andamento":
       return <Badge className="bg-primary/10 text-primary border-0">Em Execução</Badge>;
     case "concluida":
       return <Badge className="bg-success/10 text-success border-0">Concluída</Badge>;
@@ -158,7 +100,7 @@ const getStatusBadge = (status: Maintenance["status"]) => {
   }
 };
 
-const getTipoBadge = (tipo: Maintenance["tipo"]) => {
+const getTipoBadge = (tipo: Maintenance["type"]) => {
   return tipo === "preventiva" ? (
     <Badge variant="secondary">Preventiva</Badge>
   ) : (
@@ -167,12 +109,16 @@ const getTipoBadge = (tipo: Maintenance["tipo"]) => {
 };
 
 export default function Maintenance() {
-  const [maintenances, setMaintenances] = useState<Maintenance[]>(initialMaintenances);
+  const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isFinishDialogOpen, setIsFinishDialogOpen] = useState(false);
   const [selectedMaintenance, setSelectedMaintenance] = useState<Maintenance | null>(null);
   
   // Form states
@@ -183,6 +129,41 @@ export default function Maintenance() {
   const [formCusto, setFormCusto] = useState("");
   const [formDataExec, setFormDataExec] = useState("");
   const [formProximaData, setFormProximaData] = useState("");
+  const [formActualCost, setFormActualCost] = useState("");
+  const [formCompletionKm, setFormCompletionKm] = useState("");
+
+  // Pagination
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  useEffect(() => {
+    loadData();
+  }, [page, statusFilter]);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [maintenanceRes, vehiclesRes] = await Promise.all([
+        api.getMaintenances({ 
+          page, 
+          limit: 10,
+          status: statusFilter !== "todos" ? statusFilter : undefined 
+        }),
+        api.getVehicles({ limit: 100 })
+      ]);
+      setMaintenances(maintenanceRes.data);
+      setTotalPages(Math.ceil(maintenanceRes.pagination.total / 10));
+      setVehicles(vehiclesRes.data);
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar os dados.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const resetForm = () => {
     setFormVehicle("");
@@ -192,37 +173,31 @@ export default function Maintenance() {
     setFormCusto("");
     setFormDataExec("");
     setFormProximaData("");
+    setFormActualCost("");
+    setFormCompletionKm("");
   };
 
   const filteredMaintenances = maintenances.filter((m) => {
     const matchesSearch =
-      m.vehicle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      m.plate.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      m.descricao.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === "todos" || m.status === statusFilter;
-    return matchesSearch && matchesStatus;
+      (m.vehicle_model?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (m.vehicle_plate?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      m.description.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesSearch;
   });
 
-  const totalCusto = maintenances.reduce((acc, m) => acc + m.custo, 0);
-  const agendadas = maintenances.filter((m) => m.status === "agendado").length;
-  const emExecucao = maintenances.filter((m) => m.status === "em_execucao").length;
+  const totalCusto = maintenances.reduce((acc, m) => acc + (m.actual_cost || m.estimated_cost || 0), 0);
+  const agendadas = maintenances.filter((m) => m.status === "agendada").length;
+  const emExecucao = maintenances.filter((m) => m.status === "em_andamento").length;
   const concluidas = maintenances.filter((m) => m.status === "concluida").length;
-
-  const formatDateForDisplay = (dateStr: string) => {
-    if (!dateStr) return "";
-    const [year, month, day] = dateStr.split("-");
-    return `${day}/${month}/${year}`;
-  };
 
   const formatDateForInput = (dateStr: string) => {
     if (!dateStr) return "";
-    const [day, month, year] = dateStr.split("/");
-    return `${year}-${month}-${day}`;
+    const date = new Date(dateStr);
+    return date.toISOString().split('T')[0];
   };
 
-  const handleAdd = () => {
-    const vehicle = mockVehicles.find((v) => v.id === formVehicle);
-    if (!vehicle || !formDescricao || !formDataExec) {
+  const handleAdd = async () => {
+    if (!formVehicle || !formDescricao || !formDataExec) {
       toast({
         title: "Erro",
         description: "Preencha todos os campos obrigatórios.",
@@ -231,102 +206,155 @@ export default function Maintenance() {
       return;
     }
 
-    const newMaintenance: Maintenance = {
-      id: String(Date.now()),
-      vehicle: vehicle.name,
-      plate: vehicle.plate,
-      tipo: formTipo,
-      descricao: formDescricao,
-      fornecedor: formFornecedor,
-      custo: parseFloat(formCusto) || 0,
-      dataExec: formatDateForDisplay(formDataExec),
-      proximaData: formProximaData ? formatDateForDisplay(formProximaData) : null,
-      status: "agendado",
-    };
-
-    setMaintenances([newMaintenance, ...maintenances]);
-    setIsAddDialogOpen(false);
-    resetForm();
-    toast({
-      title: "Manutenção agendada",
-      description: "A manutenção foi agendada com sucesso.",
-    });
+    try {
+      setSaving(true);
+      await api.createMaintenance({
+        vehicle_id: formVehicle,
+        type: formTipo,
+        description: formDescricao,
+        supplier: formFornecedor || undefined,
+        estimated_cost: formCusto ? parseFloat(formCusto) : undefined,
+        scheduled_date: formDataExec,
+        next_maintenance_date: formProximaData || undefined,
+      });
+      
+      await loadData();
+      setIsAddDialogOpen(false);
+      resetForm();
+      toast({
+        title: "Manutenção agendada",
+        description: "A manutenção foi agendada com sucesso.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao agendar manutenção.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleEdit = () => {
+  const handleEdit = async () => {
+    if (!selectedMaintenance || !formVehicle || !formDescricao || !formDataExec) {
+      toast({
+        title: "Erro",
+        description: "Preencha todos os campos obrigatórios.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await api.updateMaintenance(selectedMaintenance.id, {
+        vehicle_id: formVehicle,
+        type: formTipo,
+        description: formDescricao,
+        supplier: formFornecedor || undefined,
+        estimated_cost: formCusto ? parseFloat(formCusto) : undefined,
+        scheduled_date: formDataExec,
+        next_maintenance_date: formProximaData || undefined,
+      });
+
+      await loadData();
+      setIsEditDialogOpen(false);
+      setSelectedMaintenance(null);
+      resetForm();
+      toast({
+        title: "Manutenção atualizada",
+        description: "As alterações foram salvas com sucesso.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao atualizar manutenção.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
     if (!selectedMaintenance) return;
     
-    const vehicle = mockVehicles.find((v) => v.id === formVehicle);
-    if (!vehicle || !formDescricao || !formDataExec) {
+    try {
+      setSaving(true);
+      await api.deleteMaintenance(selectedMaintenance.id);
+      await loadData();
+      setIsDeleteDialogOpen(false);
+      setSelectedMaintenance(null);
+      toast({
+        title: "Manutenção excluída",
+        description: "O registro foi removido com sucesso.",
+      });
+    } catch (error: any) {
       toast({
         title: "Erro",
-        description: "Preencha todos os campos obrigatórios.",
+        description: error.message || "Erro ao excluir manutenção.",
         variant: "destructive",
       });
-      return;
+    } finally {
+      setSaving(false);
     }
-
-    setMaintenances(maintenances.map((m) =>
-      m.id === selectedMaintenance.id
-        ? {
-            ...m,
-            vehicle: vehicle.name,
-            plate: vehicle.plate,
-            tipo: formTipo,
-            descricao: formDescricao,
-            fornecedor: formFornecedor,
-            custo: parseFloat(formCusto) || 0,
-            dataExec: formatDateForDisplay(formDataExec),
-            proximaData: formProximaData ? formatDateForDisplay(formProximaData) : null,
-          }
-        : m
-    ));
-    setIsEditDialogOpen(false);
-    setSelectedMaintenance(null);
-    resetForm();
-    toast({
-      title: "Manutenção atualizada",
-      description: "As alterações foram salvas com sucesso.",
-    });
   };
 
-  const handleDelete = () => {
+  const handleStartMaintenance = async (id: string) => {
+    try {
+      await api.startMaintenance(id);
+      await loadData();
+      toast({
+        title: "Status atualizado",
+        description: "A manutenção foi iniciada.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao iniciar manutenção.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleFinishMaintenance = async () => {
     if (!selectedMaintenance) return;
-    setMaintenances(maintenances.filter((m) => m.id !== selectedMaintenance.id));
-    setIsDeleteDialogOpen(false);
-    setSelectedMaintenance(null);
-    toast({
-      title: "Manutenção excluída",
-      description: "O registro foi removido com sucesso.",
-    });
-  };
 
-  const handleStatusChange = (id: string, newStatus: Maintenance["status"]) => {
-    setMaintenances(maintenances.map((m) =>
-      m.id === id ? { ...m, status: newStatus } : m
-    ));
-    const statusLabels = {
-      agendado: "agendada",
-      em_execucao: "iniciada",
-      concluida: "concluída",
-      cancelada: "cancelada",
-    };
-    toast({
-      title: "Status atualizado",
-      description: `A manutenção foi ${statusLabels[newStatus]}.`,
-    });
+    try {
+      setSaving(true);
+      await api.finishMaintenance(selectedMaintenance.id, {
+        actual_cost: formActualCost ? parseFloat(formActualCost) : undefined,
+        completion_km: formCompletionKm ? parseInt(formCompletionKm) : undefined,
+      });
+      await loadData();
+      setIsFinishDialogOpen(false);
+      setSelectedMaintenance(null);
+      resetForm();
+      toast({
+        title: "Status atualizado",
+        description: "A manutenção foi concluída.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao concluir manutenção.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const openEditDialog = (maintenance: Maintenance) => {
     setSelectedMaintenance(maintenance);
-    const vehicle = mockVehicles.find((v) => v.name === maintenance.vehicle);
-    setFormVehicle(vehicle?.id || "");
-    setFormTipo(maintenance.tipo);
-    setFormDescricao(maintenance.descricao);
-    setFormFornecedor(maintenance.fornecedor);
-    setFormCusto(String(maintenance.custo));
-    setFormDataExec(formatDateForInput(maintenance.dataExec));
-    setFormProximaData(maintenance.proximaData ? formatDateForInput(maintenance.proximaData) : "");
+    setFormVehicle(maintenance.vehicle_id);
+    setFormTipo(maintenance.type);
+    setFormDescricao(maintenance.description);
+    setFormFornecedor(maintenance.supplier || "");
+    setFormCusto(String(maintenance.estimated_cost || ""));
+    setFormDataExec(formatDateForInput(maintenance.scheduled_date));
+    setFormProximaData(maintenance.next_maintenance_date ? formatDateForInput(maintenance.next_maintenance_date) : "");
     setIsEditDialogOpen(true);
   };
 
@@ -334,6 +362,28 @@ export default function Maintenance() {
     setSelectedMaintenance(maintenance);
     setIsDeleteDialogOpen(true);
   };
+
+  const openFinishDialog = (maintenance: Maintenance) => {
+    setSelectedMaintenance(maintenance);
+    setFormActualCost(String(maintenance.actual_cost || maintenance.estimated_cost || ""));
+    setFormCompletionKm("");
+    setIsFinishDialogOpen(true);
+  };
+
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return "-";
+    return new Date(dateStr).toLocaleDateString("pt-BR");
+  };
+
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -425,15 +475,15 @@ export default function Maintenance() {
                 className="pl-9"
               />
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
               <SelectTrigger className="w-full sm:w-[180px]">
                 <Filter className="h-4 w-4 mr-2" />
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos Status</SelectItem>
-                <SelectItem value="agendado">Agendado</SelectItem>
-                <SelectItem value="em_execucao">Em Execução</SelectItem>
+                <SelectItem value="agendada">Agendada</SelectItem>
+                <SelectItem value="em_andamento">Em Execução</SelectItem>
                 <SelectItem value="concluida">Concluída</SelectItem>
                 <SelectItem value="cancelada">Cancelada</SelectItem>
               </SelectContent>
@@ -472,30 +522,30 @@ export default function Maintenance() {
                           <Wrench className="h-5 w-5 text-accent-foreground" />
                         </div>
                         <div>
-                          <p className="font-medium text-foreground">{maintenance.vehicle}</p>
-                          <p className="text-sm text-muted-foreground">{maintenance.plate}</p>
+                          <p className="font-medium text-foreground">{maintenance.vehicle_model || "Veículo"}</p>
+                          <p className="text-sm text-muted-foreground">{maintenance.vehicle_plate}</p>
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>{getTipoBadge(maintenance.tipo)}</TableCell>
+                    <TableCell>{getTipoBadge(maintenance.type)}</TableCell>
                     <TableCell className="max-w-[200px]">
-                      <p className="text-sm text-foreground truncate">{maintenance.descricao}</p>
+                      <p className="text-sm text-foreground truncate">{maintenance.description}</p>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {maintenance.fornecedor || "-"}
+                      {maintenance.supplier || "-"}
                     </TableCell>
                     <TableCell>
                       <div>
-                        <p className="text-sm text-foreground">{maintenance.dataExec}</p>
-                        {maintenance.proximaData && (
+                        <p className="text-sm text-foreground">{formatDate(maintenance.scheduled_date)}</p>
+                        {maintenance.next_maintenance_date && (
                           <p className="text-xs text-muted-foreground">
-                            Próx: {maintenance.proximaData}
+                            Próx: {formatDate(maintenance.next_maintenance_date)}
                           </p>
                         )}
                       </div>
                     </TableCell>
                     <TableCell className="text-sm font-medium text-foreground">
-                      R$ {maintenance.custo.toFixed(2)}
+                      R$ {(maintenance.actual_cost || maintenance.estimated_cost || 0).toFixed(2)}
                     </TableCell>
                     <TableCell>{getStatusBadge(maintenance.status)}</TableCell>
                     <TableCell>
@@ -511,22 +561,16 @@ export default function Maintenance() {
                             Editar
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          {maintenance.status === "agendado" && (
-                            <DropdownMenuItem onClick={() => handleStatusChange(maintenance.id, "em_execucao")}>
+                          {maintenance.status === "agendada" && (
+                            <DropdownMenuItem onClick={() => handleStartMaintenance(maintenance.id)}>
                               <Play className="h-4 w-4 mr-2" />
                               Iniciar Execução
                             </DropdownMenuItem>
                           )}
-                          {maintenance.status === "em_execucao" && (
-                            <DropdownMenuItem onClick={() => handleStatusChange(maintenance.id, "concluida")}>
+                          {maintenance.status === "em_andamento" && (
+                            <DropdownMenuItem onClick={() => openFinishDialog(maintenance)}>
                               <CheckCircle2 className="h-4 w-4 mr-2" />
                               Marcar Concluída
-                            </DropdownMenuItem>
-                          )}
-                          {(maintenance.status === "agendado" || maintenance.status === "em_execucao") && (
-                            <DropdownMenuItem onClick={() => handleStatusChange(maintenance.id, "cancelada")}>
-                              <XCircle className="h-4 w-4 mr-2" />
-                              Cancelar
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuSeparator />
@@ -546,6 +590,31 @@ export default function Maintenance() {
             </TableBody>
           </Table>
         </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex justify-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              Anterior
+            </Button>
+            <span className="flex items-center px-4 text-sm text-muted-foreground">
+              Página {page} de {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+            >
+              Próxima
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Add Dialog */}
@@ -566,9 +635,9 @@ export default function Maintenance() {
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockVehicles.map((v) => (
+                    {vehicles.map((v) => (
                       <SelectItem key={v.id} value={v.id}>
-                        {v.name} - {v.plate}
+                        {v.brand} {v.model} - {v.plate}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -644,7 +713,8 @@ export default function Maintenance() {
             <Button variant="outline" onClick={() => { setIsAddDialogOpen(false); resetForm(); }}>
               Cancelar
             </Button>
-            <Button onClick={handleAdd}>
+            <Button onClick={handleAdd} disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Agendar
             </Button>
           </DialogFooter>
@@ -669,9 +739,9 @@ export default function Maintenance() {
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockVehicles.map((v) => (
+                    {vehicles.map((v) => (
                       <SelectItem key={v.id} value={v.id}>
-                        {v.name} - {v.plate}
+                        {v.brand} {v.model} - {v.plate}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -747,8 +817,53 @@ export default function Maintenance() {
             <Button variant="outline" onClick={() => { setIsEditDialogOpen(false); setSelectedMaintenance(null); resetForm(); }}>
               Cancelar
             </Button>
-            <Button onClick={handleEdit}>
+            <Button onClick={handleEdit} disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Salvar Alterações
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Finish Dialog */}
+      <Dialog open={isFinishDialogOpen} onOpenChange={(open) => { setIsFinishDialogOpen(open); if (!open) { setSelectedMaintenance(null); resetForm(); } }}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Concluir Manutenção</DialogTitle>
+            <DialogDescription>
+              Informe os dados de conclusão da manutenção.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="actualCost">Custo Final (R$)</Label>
+              <Input 
+                id="actualCost" 
+                type="number" 
+                step="0.01" 
+                placeholder="0.00"
+                value={formActualCost}
+                onChange={(e) => setFormActualCost(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="completionKm">KM na Conclusão</Label>
+              <Input 
+                id="completionKm" 
+                type="number" 
+                placeholder="0"
+                value={formCompletionKm}
+                onChange={(e) => setFormCompletionKm(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setIsFinishDialogOpen(false); setSelectedMaintenance(null); resetForm(); }}>
+              Cancelar
+            </Button>
+            <Button onClick={handleFinishMaintenance} disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Concluir
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -760,12 +875,13 @@ export default function Maintenance() {
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir manutenção?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação não pode ser desfeita. O registro de manutenção de "{selectedMaintenance?.vehicle}" será permanentemente removido.
+              Esta ação não pode ser desfeita. O registro de manutenção será permanentemente removido.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setSelectedMaintenance(null)}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90">
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90" disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Excluir
             </AlertDialogAction>
           </AlertDialogFooter>

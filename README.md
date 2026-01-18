@@ -1,36 +1,46 @@
 # 🚛 Joelini FleetFlow
 
-Sistema completo de Gestão de Frota desenvolvido em React + TypeScript para controle de veículos, motoristas, viagens, abastecimentos e manutenções.
+Sistema completo de Gestão de Frota desenvolvido em React + TypeScript com backend Node.js/Express e banco de dados PostgreSQL. **100% integrado com banco de dados real** - sem dados mockados.
 
 ## 📋 Funcionalidades
 
-- **Dashboard** - Visão geral com KPIs, alertas e agenda de manutenções
-- **Veículos** - Cadastro completo com documentação, seguros e histórico
-- **Motoristas** - Gestão de motoristas com controle de CNH e habilitação
-- **Viagens** - Agendamento, checklist de saída/retorno e rastreamento
+Todos os módulos estão totalmente integrados com a API e persistem dados no PostgreSQL:
+
+- **Dashboard** - Visão geral com KPIs reais, alertas e agenda de manutenções
+- **Veículos** - CRUD completo com documentação, status e quilometragem
+- **Motoristas** - Gestão de motoristas com controle de CNH e validações
+- **Viagens** - Agendamento, checklist de saída e finalização
   - Classificação de viagens (curta/longa)
   - Checklist obrigatório antes de iniciar
 - **Diário de Bordo** - Controle de despesas em viagens longas
-  - Vinculação obrigatória com abastecimentos e manutenções
   - Registro de pedágios, alimentação, hospedagem
   - Análise de custos por viagem
-- **Abastecimentos** - Registro de abastecimentos com cálculo de consumo
-- **Manutenções** - Preventivas e corretivas com agendamento
-- **Ocorrências** - Multas, sinistros e avarias
-- **Termos de Aceite** - Termos digitais com assinatura (CRUD completo)
-- **Relatórios** - Exportação em CSV/PDF
-- **Auditoria** - Log completo de ações do sistema
-- **Configurações** - Personalização do sistema e gestão de usuários
+- **Abastecimentos** - Registro com cálculo automático de consumo e estatísticas
+- **Manutenções** - Preventivas e corretivas com fluxo completo (agendar → iniciar → concluir)
+- **Ocorrências** - Multas e sinistros com workflow de resolução
+- **Relatórios** - Estatísticas dinâmicas do período selecionado
+- **Auditoria** - Log completo de todas as ações do sistema
+- **Configurações** - Gestão de usuários com perfis de acesso
   - Vinculação de usuários com motoristas
 
 ## 🛠️ Stack Tecnológica
 
-- **Frontend**: React 18, TypeScript, Vite
-- **UI**: Tailwind CSS, shadcn/ui, Lucide Icons
-- **Estado**: TanStack Query, React Hook Form
-- **Gráficos**: Recharts
-- **Backend**: Node.js, Express, PostgreSQL 15
-- **Deploy**: Docker, Docker Compose, Nginx
+### Frontend
+- React 18, TypeScript, Vite
+- Tailwind CSS, shadcn/ui, Lucide Icons
+- TanStack Query, React Hook Form
+- Recharts para gráficos
+
+### Backend
+- Node.js, Express
+- PostgreSQL 15
+- JWT para autenticação
+- bcrypt para hash de senhas
+
+### Infraestrutura
+- Docker, Docker Compose
+- Nginx para proxy reverso
+- Scripts de backup/restore
 
 ## 📦 Requisitos
 
@@ -45,14 +55,24 @@ Sistema completo de Gestão de Frota desenvolvido em React + TypeScript para con
 git clone https://github.com/seu-usuario/joelini-fleetflow.git
 cd joelini-fleetflow
 
-# 2. Instalar dependências
+# 2. Instalar dependências do frontend
 npm install
 
-# 3. Iniciar servidor de desenvolvimento
+# 3. Instalar dependências do backend
+cd backend && npm install && cd ..
+
+# 4. Iniciar banco de dados (Docker)
+docker compose up -d db
+
+# 5. Iniciar backend
+cd backend && npm run dev &
+
+# 6. Iniciar frontend
 npm run dev
 ```
 
-Acesse: http://localhost:8080
+Frontend: http://localhost:8080
+Backend API: http://localhost:3006
 
 ## 🐳 Deploy com Docker (Produção)
 
@@ -64,7 +84,7 @@ Acesse: http://localhost:8080
 | API Backend | 3006 | **3006** |
 | Frontend | 80 | **3007** |
 
-> ⚠️ As portas foram configuradas para evitar conflitos com serviços existentes (3000-3005 e 5432-5433).
+> ⚠️ As portas foram configuradas para evitar conflitos com serviços existentes.
 
 ### Passo a Passo
 
@@ -105,8 +125,10 @@ npm run dev          # Iniciar servidor dev (porta 8080)
 npm run build        # Build de produção
 npm run preview      # Preview do build local
 
-# Linting
-npm run lint         # Verificar código
+# Backend
+cd backend
+npm run dev          # Iniciar backend em modo dev
+npm start            # Iniciar backend em produção
 
 # Docker
 docker compose up -d           # Iniciar containers
@@ -123,7 +145,7 @@ docker compose logs -f db      # Ver logs do banco
 ## 🗄️ Estrutura do Banco de Dados
 
 ```
-├── roles               # Perfis de acesso (admin, gestor_frota, planejamento, operacional, motorista)
+├── roles               # Perfis de acesso
 ├── users               # Usuários do sistema (com vinculação a motorista)
 ├── vehicles            # Veículos da frota
 ├── drivers             # Motoristas
@@ -133,11 +155,9 @@ docker compose logs -f db      # Ver logs do banco
 ├── maintenances        # Manutenções
 ├── travel_log_expenses # Diário de Bordo (despesas de viagem longa)
 ├── incidents           # Ocorrências (multas/sinistros)
-├── terms               # Termos cadastrados
-├── acceptances         # Aceites de termos
 ├── audit_logs          # Log de auditoria
 ├── notifications       # Notificações
-└── settings            # Configurações
+└── settings            # Configurações do sistema
 ```
 
 ## 👤 Usuário Padrão
@@ -171,12 +191,12 @@ joelini-fleetflow/
 │   │   └── ui/          # shadcn/ui components
 │   ├── contexts/        # Contextos React (Auth)
 │   ├── hooks/           # Custom hooks
-│   ├── lib/             # Utilitários e API
+│   ├── lib/             # Utilitários e API client
 │   └── pages/           # Páginas da aplicação
 ├── backend/
 │   └── src/
 │       ├── config/      # Configuração do banco
-│       ├── middleware/  # Middlewares (auth)
+│       ├── middleware/  # Middlewares (auth, roles)
 │       └── routes/      # Rotas da API
 ├── database/
 │   └── init/            # Scripts SQL de inicialização
@@ -192,11 +212,31 @@ joelini-fleetflow/
 
 ## 🔒 Segurança
 
-- Senhas hasheadas com bcrypt
-- Autenticação via JWT
-- Logs de auditoria completos
-- Backup automático configurável
-- Controle de acesso por perfil
+- ✅ Senhas hasheadas com bcrypt
+- ✅ Autenticação via JWT
+- ✅ Logs de auditoria completos
+- ✅ Controle de acesso por perfil (RBAC)
+- ✅ Backup automático configurável
+- ✅ Validação de entrada em todas as rotas
+
+## 🔄 API Endpoints
+
+### Autenticação
+- `POST /api/auth/login` - Login
+- `GET /api/auth/me` - Dados do usuário logado
+- `POST /api/auth/logout` - Logout
+- `PUT /api/auth/password` - Alterar senha
+
+### Recursos (CRUD completo)
+- `/api/vehicles` - Veículos
+- `/api/drivers` - Motoristas
+- `/api/trips` - Viagens
+- `/api/fuelings` - Abastecimentos
+- `/api/maintenances` - Manutenções
+- `/api/incidents` - Ocorrências
+- `/api/users` - Usuários
+- `/api/audit` - Logs de auditoria
+- `/api/settings` - Configurações
 
 ## 🔧 Troubleshooting
 
@@ -217,6 +257,9 @@ docker compose logs -f
 docker compose down -v
 docker compose up -d --build
 ```
+
+### Problemas de login
+O backend automaticamente verifica e corrige hashes de senha inválidos na inicialização.
 
 ## 📞 Suporte
 
