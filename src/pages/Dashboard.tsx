@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { AlertCard } from "@/components/dashboard/AlertCard";
 import { RecentTripsTable } from "@/components/dashboard/RecentTripsTable";
 import { MaintenanceSchedule } from "@/components/dashboard/MaintenanceSchedule";
-import { Car, Route, Fuel, DollarSign, Plus } from "lucide-react";
+import { Car, Route, Fuel, DollarSign, Plus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -28,6 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
 
 const checklistItems = [
   { id: "niveis", label: "Níveis (óleo, água, combustível)" },
@@ -42,118 +43,204 @@ const checklistItems = [
   { id: "estepe", label: "Estepe" },
 ];
 
-const mockAlerts = [
-  {
-    id: "1",
-    type: "danger" as const,
-    title: "CNH Vencida",
-    description: "Carlos Oliveira - CNH venceu em 05/12/2024",
-    date: "Hoje",
-  },
-  {
-    id: "2",
-    type: "warning" as const,
-    title: "Manutenção Atrasada",
-    description: "Fiat Ducato ABC-1234 - Revisão de 50.000km",
-    date: "3 dias",
-  },
-  {
-    id: "3",
-    type: "warning" as const,
-    title: "CNH a Vencer",
-    description: "Maria Santos - CNH vence em 15 dias",
-    date: "Em 15 dias",
-  },
-];
+interface DashboardStats {
+  totalVehicles: number;
+  activeVehicles: number;
+  totalTrips: number;
+  activeTrips: number;
+  totalKm: number;
+  totalCost: number;
+}
 
-const mockTrips = [
-  {
-    id: "1",
-    vehicle: "Fiat Strada",
-    plate: "ABC-1234",
-    driver: "João Silva",
-    origin: "São Paulo",
-    destination: "Campinas",
-    date: "11/12/2024",
-    km: 120,
-    status: "em_andamento" as const,
-  },
-  {
-    id: "2",
-    vehicle: "VW Saveiro",
-    plate: "DEF-5678",
-    driver: "Carlos Oliveira",
-    origin: "Campinas",
-    destination: "Ribeirão Preto",
-    date: "10/12/2024",
-    km: 245,
-    status: "finalizada" as const,
-  },
-  {
-    id: "3",
-    vehicle: "Fiat Ducato",
-    plate: "GHI-9012",
-    driver: "Maria Santos",
-    origin: "São Paulo",
-    destination: "Santos",
-    date: "10/12/2024",
-    km: 85,
-    status: "finalizada" as const,
-  },
-  {
-    id: "4",
-    vehicle: "Renault Master",
-    plate: "JKL-3456",
-    driver: "Pedro Costa",
-    origin: "São Paulo",
-    destination: "Guarulhos",
-    date: "12/12/2024",
-    km: 45,
-    status: "agendada" as const,
-  },
-];
+interface Alert {
+  id: string;
+  type: "danger" | "warning" | "info";
+  title: string;
+  description: string;
+  date: string;
+}
 
-const mockMaintenances = [
-  {
-    id: "1",
-    vehicle: "Fiat Ducato",
-    plate: "ABC-1234",
-    type: "Revisão 50.000km",
-    scheduledDate: "14/12/2024",
-    daysUntil: 3,
-  },
-  {
-    id: "2",
-    vehicle: "VW Saveiro",
-    plate: "DEF-5678",
-    type: "Troca de Óleo",
-    scheduledDate: "18/12/2024",
-    daysUntil: 7,
-  },
-  {
-    id: "3",
-    vehicle: "Renault Master",
-    plate: "JKL-3456",
-    type: "Alinhamento e Balanceamento",
-    scheduledDate: "20/12/2024",
-    daysUntil: 9,
-  },
-  {
-    id: "4",
-    vehicle: "Fiat Strada",
-    plate: "MNO-7890",
-    type: "Troca de Pneus",
-    scheduledDate: "05/12/2024",
-    daysUntil: -6,
-  },
-];
+interface Trip {
+  id: string;
+  vehicle: string;
+  plate: string;
+  driver: string;
+  origin: string;
+  destination: string;
+  date: string;
+  km: number;
+  status: "em_andamento" | "finalizada" | "agendada";
+}
+
+interface Maintenance {
+  id: string;
+  vehicle: string;
+  plate: string;
+  type: string;
+  scheduledDate: string;
+  daysUntil: number;
+}
+
+interface Vehicle {
+  id: string;
+  plate: string;
+  model: string;
+  brand: string;
+  current_km: number;
+  status: string;
+}
+
+interface Driver {
+  id: string;
+  name: string;
+  status: string;
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  
+  // Data states
+  const [stats, setStats] = useState<DashboardStats>({
+    totalVehicles: 0,
+    activeVehicles: 0,
+    totalTrips: 0,
+    activeTrips: 0,
+    totalKm: 0,
+    totalCost: 0,
+  });
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [recentTrips, setRecentTrips] = useState<Trip[]>([]);
+  const [upcomingMaintenances, setUpcomingMaintenances] = useState<Maintenance[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  
+  // Dialog states
   const [isFuelingOpen, setIsFuelingOpen] = useState(false);
   const [isTripOpen, setIsTripOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("dados");
   const [checkedItems, setCheckedItems] = useState<string[]>([]);
+
+  // Form states
+  const [fuelingForm, setFuelingForm] = useState({
+    vehicleId: "",
+    driverId: "",
+    date: "",
+    currentKm: "",
+    liters: "",
+    pricePerLiter: "",
+    fuelType: "",
+    station: "",
+  });
+
+  const [tripForm, setTripForm] = useState({
+    vehicleId: "",
+    driverId: "",
+    origin: "",
+    destination: "",
+    startAt: "",
+    kmInicio: "",
+    purpose: "",
+  });
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      
+      const [vehicleStats, tripsRes, maintenancesRes, fuelingsStats, vehiclesRes, driversRes] = await Promise.all([
+        api.getVehicleStats(),
+        api.getTrips({ limit: 5 }),
+        api.getUpcomingMaintenances(),
+        api.getFuelingStats(),
+        api.getVehicles({ limit: 100 }),
+        api.getDrivers({ limit: 100 }),
+      ]);
+
+      // Set stats
+      setStats({
+        totalVehicles: vehicleStats.total || 0,
+        activeVehicles: vehicleStats.active || 0,
+        totalTrips: tripsRes.pagination?.total || 0,
+        activeTrips: tripsRes.data?.filter((t: any) => t.status === "em_andamento").length || 0,
+        totalKm: fuelingsStats.totalKm || 0,
+        totalCost: (fuelingsStats.totalCost || 0) + (fuelingsStats.maintenanceCost || 0),
+      });
+
+      // Set vehicles and drivers
+      setVehicles(vehiclesRes.data || []);
+      setDrivers(driversRes.data || []);
+
+      // Transform trips for display
+      const formattedTrips = (tripsRes.data || []).slice(0, 4).map((t: any) => ({
+        id: t.id,
+        vehicle: t.vehicle_model || "Veículo",
+        plate: t.vehicle_plate || "",
+        driver: t.driver_name || "Motorista",
+        origin: t.origin,
+        destination: t.destination,
+        date: new Date(t.start_date).toLocaleDateString("pt-BR"),
+        km: t.end_km ? t.end_km - t.start_km : 0,
+        status: t.status,
+      }));
+      setRecentTrips(formattedTrips);
+
+      // Transform maintenances for display
+      const formattedMaintenances = (maintenancesRes || []).slice(0, 4).map((m: any) => {
+        const scheduledDate = new Date(m.scheduled_date);
+        const today = new Date();
+        const daysUntil = Math.ceil((scheduledDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        return {
+          id: m.id,
+          vehicle: m.vehicle_model || "Veículo",
+          plate: m.vehicle_plate || "",
+          type: m.description,
+          scheduledDate: scheduledDate.toLocaleDateString("pt-BR"),
+          daysUntil,
+        };
+      });
+      setUpcomingMaintenances(formattedMaintenances);
+
+      // Generate alerts from data
+      const generatedAlerts: Alert[] = [];
+      
+      // Check for overdue maintenances
+      formattedMaintenances.forEach((m: any) => {
+        if (m.daysUntil < 0) {
+          generatedAlerts.push({
+            id: `maint-${m.id}`,
+            type: "danger",
+            title: "Manutenção Atrasada",
+            description: `${m.vehicle} ${m.plate} - ${m.type}`,
+            date: `${Math.abs(m.daysUntil)} dias`,
+          });
+        } else if (m.daysUntil <= 7) {
+          generatedAlerts.push({
+            id: `maint-${m.id}`,
+            type: "warning",
+            title: "Manutenção Próxima",
+            description: `${m.vehicle} ${m.plate} - ${m.type}`,
+            date: `Em ${m.daysUntil} dias`,
+          });
+        }
+      });
+
+      setAlerts(generatedAlerts.slice(0, 3));
+    } catch (error) {
+      console.error("Error loading dashboard:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar os dados do dashboard.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCheckItem = (itemId: string, checked: boolean) => {
     if (checked) {
@@ -163,15 +250,58 @@ export default function Dashboard() {
     }
   };
 
-  const handleRegisterFueling = () => {
-    setIsFuelingOpen(false);
-    toast({
-      title: "Abastecimento registrado",
-      description: "O abastecimento foi registrado com sucesso.",
-    });
+  const handleRegisterFueling = async () => {
+    if (!fuelingForm.vehicleId || !fuelingForm.driverId || !fuelingForm.liters || !fuelingForm.pricePerLiter) {
+      toast({
+        title: "Erro",
+        description: "Preencha todos os campos obrigatórios.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await api.createFueling({
+        vehicle_id: fuelingForm.vehicleId,
+        driver_id: fuelingForm.driverId,
+        date: fuelingForm.date || new Date().toISOString().split('T')[0],
+        current_km: fuelingForm.currentKm ? parseInt(fuelingForm.currentKm) : undefined,
+        liters: parseFloat(fuelingForm.liters),
+        price_per_liter: parseFloat(fuelingForm.pricePerLiter),
+        total_cost: parseFloat(fuelingForm.liters) * parseFloat(fuelingForm.pricePerLiter),
+        fuel_type: fuelingForm.fuelType || "gasolina",
+        station: fuelingForm.station,
+      });
+
+      setIsFuelingOpen(false);
+      setFuelingForm({
+        vehicleId: "",
+        driverId: "",
+        date: "",
+        currentKm: "",
+        liters: "",
+        pricePerLiter: "",
+        fuelType: "",
+        station: "",
+      });
+      toast({
+        title: "Abastecimento registrado",
+        description: "O abastecimento foi registrado com sucesso.",
+      });
+      await loadDashboardData();
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao registrar abastecimento.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleStartTrip = () => {
+  const handleStartTrip = async () => {
     if (checkedItems.length < checklistItems.length) {
       toast({
         title: "Checklist incompleto",
@@ -180,24 +310,127 @@ export default function Dashboard() {
       });
       return;
     }
-    setIsTripOpen(false);
-    setCheckedItems([]);
-    setActiveTab("dados");
-    toast({
-      title: "Viagem iniciada",
-      description: "A viagem foi registrada e iniciada com sucesso.",
-    });
+
+    if (!tripForm.vehicleId || !tripForm.driverId || !tripForm.origin || !tripForm.destination) {
+      toast({
+        title: "Erro",
+        description: "Preencha todos os campos obrigatórios.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const vehicle = vehicles.find(v => v.id === tripForm.vehicleId);
+      
+      await api.createTrip({
+        vehicle_id: tripForm.vehicleId,
+        driver_id: tripForm.driverId,
+        origin: tripForm.origin,
+        destination: tripForm.destination,
+        start_date: new Date().toISOString(),
+        start_km: tripForm.kmInicio ? parseInt(tripForm.kmInicio) : vehicle?.current_km,
+        purpose: tripForm.purpose,
+        trip_type: "curta",
+        status: "em_andamento",
+      });
+
+      setIsTripOpen(false);
+      setCheckedItems([]);
+      setActiveTab("dados");
+      setTripForm({
+        vehicleId: "",
+        driverId: "",
+        origin: "",
+        destination: "",
+        startAt: "",
+        kmInicio: "",
+        purpose: "",
+      });
+      toast({
+        title: "Viagem iniciada",
+        description: "A viagem foi registrada e iniciada com sucesso.",
+      });
+      await loadDashboardData();
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao iniciar viagem.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleScheduleTrip = () => {
-    setIsTripOpen(false);
-    setCheckedItems([]);
-    setActiveTab("dados");
-    toast({
-      title: "Viagem agendada",
-      description: "A viagem foi agendada com sucesso.",
-    });
+  const handleScheduleTrip = async () => {
+    if (!tripForm.vehicleId || !tripForm.driverId || !tripForm.origin || !tripForm.destination || !tripForm.startAt) {
+      toast({
+        title: "Erro",
+        description: "Preencha todos os campos obrigatórios, incluindo data/hora de saída.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const vehicle = vehicles.find(v => v.id === tripForm.vehicleId);
+      
+      await api.createTrip({
+        vehicle_id: tripForm.vehicleId,
+        driver_id: tripForm.driverId,
+        origin: tripForm.origin,
+        destination: tripForm.destination,
+        start_date: tripForm.startAt,
+        start_km: tripForm.kmInicio ? parseInt(tripForm.kmInicio) : vehicle?.current_km,
+        purpose: tripForm.purpose,
+        trip_type: "curta",
+        status: "agendada",
+      });
+
+      setIsTripOpen(false);
+      setCheckedItems([]);
+      setActiveTab("dados");
+      setTripForm({
+        vehicleId: "",
+        driverId: "",
+        origin: "",
+        destination: "",
+        startAt: "",
+        kmInicio: "",
+        purpose: "",
+      });
+      toast({
+        title: "Viagem agendada",
+        description: "A viagem foi agendada com sucesso.",
+      });
+      await loadDashboardData();
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao agendar viagem.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
+
+  // Available vehicles and drivers
+  const availableVehicles = vehicles.filter(v => v.status === "disponivel" || v.status === "active");
+  const availableDrivers = drivers.filter(d => d.status === "ativo" || d.status === "active");
+
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -209,7 +442,7 @@ export default function Dashboard() {
               Bem-vindo de volta!
             </h2>
             <p className="text-muted-foreground">
-              Visão geral da frota em dezembro de 2024
+              Visão geral da frota em {new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
             </p>
           </div>
           <div className="flex gap-3">
@@ -228,42 +461,38 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard
             title="Veículos Ativos"
-            value="18"
-            subtitle="de 22 veículos"
+            value={String(stats.activeVehicles)}
+            subtitle={`de ${stats.totalVehicles} veículos`}
             icon={<Car className="h-6 w-6" />}
-            trend={{ value: 5, isPositive: true }}
           />
           <StatCard
             title="Viagens no Mês"
-            value="47"
-            subtitle="8 em andamento"
+            value={String(stats.totalTrips)}
+            subtitle={`${stats.activeTrips} em andamento`}
             icon={<Route className="h-6 w-6" />}
-            trend={{ value: 12, isPositive: true }}
           />
           <StatCard
             title="KM Total"
-            value="12.450"
-            subtitle="km rodados em dezembro"
+            value={stats.totalKm.toLocaleString("pt-BR")}
+            subtitle="km rodados no mês"
             icon={<Fuel className="h-6 w-6" />}
-            trend={{ value: 8, isPositive: true }}
           />
           <StatCard
             title="Custo Mensal"
-            value="R$ 24.580"
+            value={`R$ ${stats.totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
             subtitle="combustível + manutenção"
             icon={<DollarSign className="h-6 w-6" />}
-            trend={{ value: 3, isPositive: false }}
           />
         </div>
 
         {/* Alerts and Maintenance */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <AlertCard alerts={mockAlerts} />
-          <MaintenanceSchedule maintenances={mockMaintenances} />
+          <AlertCard alerts={alerts} />
+          <MaintenanceSchedule maintenances={upcomingMaintenances} />
         </div>
 
         {/* Recent Trips */}
-        <RecentTripsTable trips={mockTrips} />
+        <RecentTripsTable trips={recentTrips} />
       </div>
 
       {/* Dialog Registrar Abastecimento */}
@@ -278,54 +507,95 @@ export default function Dashboard() {
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="veiculo">Veículo</Label>
-                <Select>
+                <Label>Veículo *</Label>
+                <Select 
+                  value={fuelingForm.vehicleId}
+                  onValueChange={(v) => {
+                    const vehicle = vehicles.find(veh => veh.id === v);
+                    setFuelingForm({ 
+                      ...fuelingForm, 
+                      vehicleId: v,
+                      currentKm: String(vehicle?.current_km || "")
+                    });
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="1">Fiat Strada - ABC-1234</SelectItem>
-                    <SelectItem value="2">VW Saveiro - DEF-5678</SelectItem>
-                    <SelectItem value="3">Fiat Ducato - GHI-9012</SelectItem>
+                    {availableVehicles.map((v) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.brand} {v.model} - {v.plate}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="motorista">Motorista</Label>
-                <Select>
+                <Label>Motorista *</Label>
+                <Select 
+                  value={fuelingForm.driverId}
+                  onValueChange={(v) => setFuelingForm({ ...fuelingForm, driverId: v })}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="1">João Silva</SelectItem>
-                    <SelectItem value="2">Maria Santos</SelectItem>
-                    <SelectItem value="3">Pedro Costa</SelectItem>
+                    {availableDrivers.map((d) => (
+                      <SelectItem key={d.id} value={d.id}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="data">Data</Label>
-                <Input id="data" type="date" />
+                <Label>Data</Label>
+                <Input 
+                  type="date"
+                  value={fuelingForm.date}
+                  onChange={(e) => setFuelingForm({ ...fuelingForm, date: e.target.value })}
+                />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="km">Odômetro (km)</Label>
-                <Input id="km" type="number" placeholder="0" />
+                <Label>Odômetro (km)</Label>
+                <Input 
+                  type="number" 
+                  placeholder="0"
+                  value={fuelingForm.currentKm}
+                  onChange={(e) => setFuelingForm({ ...fuelingForm, currentKm: e.target.value })}
+                />
               </div>
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="litros">Litros</Label>
-                <Input id="litros" type="number" step="0.01" placeholder="0.00" />
+                <Label>Litros *</Label>
+                <Input 
+                  type="number" 
+                  step="0.01" 
+                  placeholder="0.00"
+                  value={fuelingForm.liters}
+                  onChange={(e) => setFuelingForm({ ...fuelingForm, liters: e.target.value })}
+                />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="valor">Valor (R$)</Label>
-                <Input id="valor" type="number" step="0.01" placeholder="0.00" />
+                <Label>Preço/Litro *</Label>
+                <Input 
+                  type="number" 
+                  step="0.01" 
+                  placeholder="0.00"
+                  value={fuelingForm.pricePerLiter}
+                  onChange={(e) => setFuelingForm({ ...fuelingForm, pricePerLiter: e.target.value })}
+                />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="combustivel">Combustível</Label>
-                <Select>
+                <Label>Combustível</Label>
+                <Select 
+                  value={fuelingForm.fuelType}
+                  onValueChange={(v) => setFuelingForm({ ...fuelingForm, fuelType: v })}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Tipo" />
                   </SelectTrigger>
@@ -339,15 +609,20 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="posto">Posto</Label>
-              <Input id="posto" placeholder="Nome do posto" />
+              <Label>Posto</Label>
+              <Input 
+                placeholder="Nome do posto"
+                value={fuelingForm.station}
+                onChange={(e) => setFuelingForm({ ...fuelingForm, station: e.target.value })}
+              />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsFuelingOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleRegisterFueling}>
+            <Button onClick={handleRegisterFueling} disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Registrar
             </Button>
           </DialogFooter>
@@ -375,29 +650,45 @@ export default function Dashboard() {
             <TabsContent value="dados" className="space-y-4 pt-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="veiculo">Veículo</Label>
-                  <Select>
+                  <Label>Veículo *</Label>
+                  <Select 
+                    value={tripForm.vehicleId}
+                    onValueChange={(v) => {
+                      const vehicle = vehicles.find(veh => veh.id === v);
+                      setTripForm({ 
+                        ...tripForm, 
+                        vehicleId: v,
+                        kmInicio: String(vehicle?.current_km || "")
+                      });
+                    }}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione o veículo" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="1">Fiat Strada - ABC-1234</SelectItem>
-                      <SelectItem value="2">VW Saveiro - DEF-5678</SelectItem>
-                      <SelectItem value="4">Renault Master - JKL-3456</SelectItem>
+                      {availableVehicles.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>
+                          {v.brand} {v.model} - {v.plate}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="motorista">Motorista</Label>
-                  <Select>
+                  <Label>Motorista *</Label>
+                  <Select 
+                    value={tripForm.driverId}
+                    onValueChange={(v) => setTripForm({ ...tripForm, driverId: v })}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione o motorista" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="1">João Silva</SelectItem>
-                      <SelectItem value="3">Maria Santos</SelectItem>
-                      <SelectItem value="4">Pedro Costa</SelectItem>
-                      <SelectItem value="5">Ana Rodrigues</SelectItem>
+                      {availableDrivers.map((d) => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -405,32 +696,50 @@ export default function Dashboard() {
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="origem">Origem</Label>
-                  <Input id="origem" placeholder="Cidade, UF" />
+                  <Label>Origem *</Label>
+                  <Input 
+                    placeholder="Cidade, UF"
+                    value={tripForm.origin}
+                    onChange={(e) => setTripForm({ ...tripForm, origin: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="destino">Destino</Label>
-                  <Input id="destino" placeholder="Cidade, UF" />
+                  <Label>Destino *</Label>
+                  <Input 
+                    placeholder="Cidade, UF"
+                    value={tripForm.destination}
+                    onChange={(e) => setTripForm({ ...tripForm, destination: e.target.value })}
+                  />
                 </div>
               </div>
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="dataHoraSaida">Data/Hora Saída</Label>
-                  <Input id="dataHoraSaida" type="datetime-local" />
+                  <Label>Data/Hora Saída</Label>
+                  <Input 
+                    type="datetime-local"
+                    value={tripForm.startAt}
+                    onChange={(e) => setTripForm({ ...tripForm, startAt: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="kmInicio">KM Inicial</Label>
-                  <Input id="kmInicio" type="number" placeholder="0" />
+                  <Label>KM Inicial</Label>
+                  <Input 
+                    type="number" 
+                    placeholder="0"
+                    value={tripForm.kmInicio}
+                    onChange={(e) => setTripForm({ ...tripForm, kmInicio: e.target.value })}
+                  />
                 </div>
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="finalidade">Finalidade da Viagem</Label>
+                <Label>Finalidade da Viagem</Label>
                 <Textarea 
-                  id="finalidade" 
                   placeholder="Descreva o motivo da viagem..."
                   rows={3}
+                  value={tripForm.purpose}
+                  onChange={(e) => setTripForm({ ...tripForm, purpose: e.target.value })}
                 />
               </div>
             </TabsContent>
@@ -458,15 +767,6 @@ export default function Dashboard() {
                   ))}
                 </div>
               </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="observacoes">Observações</Label>
-                <Textarea 
-                  id="observacoes" 
-                  placeholder="Observações adicionais sobre o estado do veículo..."
-                  rows={3}
-                />
-              </div>
             </TabsContent>
           </Tabs>
           
@@ -481,10 +781,12 @@ export default function Dashboard() {
             >
               Cancelar
             </Button>
-            <Button variant="secondary" onClick={handleScheduleTrip}>
+            <Button variant="secondary" onClick={handleScheduleTrip} disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Salvar como Agendada
             </Button>
-            <Button onClick={handleStartTrip}>
+            <Button onClick={handleStartTrip} disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Iniciar Viagem
             </Button>
           </DialogFooter>

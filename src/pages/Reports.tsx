@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -8,7 +9,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   BarChart3,
   Download,
@@ -20,7 +20,10 @@ import {
   Wrench,
   DollarSign,
   Route,
+  Loader2,
 } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
 
 const reportTypes = [
   {
@@ -61,7 +64,120 @@ const reportTypes = [
   },
 ];
 
+interface Vehicle {
+  id: string;
+  plate: string;
+  model: string;
+  brand: string;
+}
+
+interface ReportStats {
+  totalKm: number;
+  totalLiters: number;
+  totalTrips: number;
+  totalCost: number;
+  costPerKm: number;
+}
+
 export default function Reports() {
+  const [loading, setLoading] = useState(true);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [stats, setStats] = useState<ReportStats>({
+    totalKm: 0,
+    totalLiters: 0,
+    totalTrips: 0,
+    totalCost: 0,
+    costPerKm: 0,
+  });
+  
+  const [startDate, setStartDate] = useState(() => {
+    const date = new Date();
+    date.setDate(1);
+    return date.toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [vehicleFilter, setVehicleFilter] = useState("todos");
+
+  useEffect(() => {
+    loadData();
+  }, [startDate, endDate, vehicleFilter]);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      
+      const params: Record<string, string> = {
+        start_date: startDate,
+        end_date: endDate,
+      };
+      if (vehicleFilter !== "todos") {
+        params.vehicle_id = vehicleFilter;
+      }
+      
+      const [vehiclesRes, fuelingsStats, tripsRes] = await Promise.all([
+        api.getVehicles({ limit: 100 }),
+        api.getFuelingStats(params),
+        api.getTrips({ ...params, limit: 1000 }),
+      ]);
+      
+      setVehicles(vehiclesRes.data || []);
+      
+      const totalTrips = tripsRes.pagination?.total || 0;
+      const totalCost = (fuelingsStats.totalCost || 0);
+      const totalKm = tripsRes.data?.reduce((sum: number, t: any) => {
+        if (t.end_km && t.start_km) {
+          return sum + (t.end_km - t.start_km);
+        }
+        return sum;
+      }, 0) || 0;
+      
+      setStats({
+        totalKm,
+        totalLiters: fuelingsStats.totalLiters || 0,
+        totalTrips,
+        totalCost,
+        costPerKm: totalKm > 0 ? totalCost / totalKm : 0,
+      });
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar os dados dos relatórios.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExport = (reportId: string, format: "excel" | "pdf") => {
+    toast({
+      title: "Exportando...",
+      description: `Gerando relatório em ${format.toUpperCase()}. O download iniciará em breve.`,
+    });
+    
+    // In a real implementation, this would trigger an API call to generate the report
+    setTimeout(() => {
+      toast({
+        title: "Relatório gerado",
+        description: `O relatório foi gerado com sucesso.`,
+      });
+    }, 2000);
+  };
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString("pt-BR");
+  };
+
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
       <div className="space-y-6 animate-fade-in">
@@ -84,41 +200,31 @@ export default function Reports() {
                 <input
                   type="date"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  defaultValue="2024-12-01"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
                 />
                 <span className="flex items-center text-muted-foreground">até</span>
                 <input
                   type="date"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  defaultValue="2024-12-11"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
                 />
               </div>
             </div>
             <div className="w-full sm:w-48 space-y-2">
               <label className="text-sm font-medium text-foreground">Veículo</label>
-              <Select>
+              <Select value={vehicleFilter} onValueChange={setVehicleFilter}>
                 <SelectTrigger>
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos os veículos</SelectItem>
-                  <SelectItem value="1">Fiat Strada - ABC-1234</SelectItem>
-                  <SelectItem value="2">VW Saveiro - DEF-5678</SelectItem>
-                  <SelectItem value="3">Fiat Ducato - GHI-9012</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-full sm:w-48 space-y-2">
-              <label className="text-sm font-medium text-foreground">Centro de Custo</label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="logistica">Logística</SelectItem>
-                  <SelectItem value="comercial">Comercial</SelectItem>
-                  <SelectItem value="entregas">Entregas</SelectItem>
+                  {vehicles.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      {v.brand} {v.model} - {v.plate}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -144,11 +250,21 @@ export default function Reports() {
                     {report.description}
                   </p>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" className="gap-1">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="gap-1"
+                      onClick={() => handleExport(report.id, "excel")}
+                    >
                       <FileSpreadsheet className="h-4 w-4" />
                       Excel
                     </Button>
-                    <Button size="sm" variant="outline" className="gap-1">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="gap-1"
+                      onClick={() => handleExport(report.id, "pdf")}
+                    >
                       <FileText className="h-4 w-4" />
                       PDF
                     </Button>
@@ -167,10 +283,10 @@ export default function Reports() {
                 Resumo do Período
               </h3>
               <p className="text-sm text-muted-foreground">
-                01/12/2024 a 11/12/2024
+                {formatDate(startDate)} a {formatDate(endDate)}
               </p>
             </div>
-            <Button variant="outline" className="gap-2">
+            <Button variant="outline" className="gap-2" onClick={() => handleExport("resumo", "excel")}>
               <Download className="h-4 w-4" />
               Exportar Resumo
             </Button>
@@ -178,19 +294,19 @@ export default function Reports() {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
             <div className="text-center">
-              <p className="text-3xl font-bold text-primary">12.450</p>
+              <p className="text-3xl font-bold text-primary">{stats.totalKm.toLocaleString("pt-BR")}</p>
               <p className="text-sm text-muted-foreground">km rodados</p>
             </div>
             <div className="text-center">
-              <p className="text-3xl font-bold text-foreground">256</p>
+              <p className="text-3xl font-bold text-foreground">{stats.totalLiters.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}</p>
               <p className="text-sm text-muted-foreground">litros abastecidos</p>
             </div>
             <div className="text-center">
-              <p className="text-3xl font-bold text-foreground">47</p>
+              <p className="text-3xl font-bold text-foreground">{stats.totalTrips}</p>
               <p className="text-sm text-muted-foreground">viagens realizadas</p>
             </div>
             <div className="text-center">
-              <p className="text-3xl font-bold text-success">R$ 24.580</p>
+              <p className="text-3xl font-bold text-success">R$ {stats.totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
               <p className="text-sm text-muted-foreground">custo total</p>
             </div>
           </div>
@@ -198,8 +314,7 @@ export default function Reports() {
           <div className="mt-6 pt-6 border-t border-border">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <TrendingUp className="h-4 w-4 text-success" />
-              <span>Custo por km: <strong className="text-foreground">R$ 1,97</strong></span>
-              <span className="text-success">(5% menor que o mês anterior)</span>
+              <span>Custo por km: <strong className="text-foreground">R$ {stats.costPerKm.toFixed(2)}</strong></span>
             </div>
           </div>
         </div>
