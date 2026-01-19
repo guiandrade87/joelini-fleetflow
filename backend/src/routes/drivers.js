@@ -4,6 +4,22 @@ const { authenticateToken, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
+// Lista simplificada para selects - DEVE vir antes de /:id
+router.get('/available/list', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, cnh_num, cnh_categoria, telefone 
+       FROM drivers 
+       WHERE habilitado = true 
+       ORDER BY name`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Erro ao buscar motoristas disponíveis:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 // Listar todos os motoristas
 router.get('/', authenticateToken, async (req, res) => {
   try {
@@ -14,13 +30,14 @@ router.get('/', authenticateToken, async (req, res) => {
     const params = [];
     let paramIndex = 1;
 
-    if (status) {
-      query += ` AND status = $${paramIndex++}`;
-      params.push(status);
+    if (status === 'habilitado') {
+      query += ` AND habilitado = true`;
+    } else if (status === 'inabilitado') {
+      query += ` AND habilitado = false`;
     }
 
     if (search) {
-      query += ` AND (name ILIKE $${paramIndex} OR cpf ILIKE $${paramIndex} OR cnh ILIKE $${paramIndex})`;
+      query += ` AND (name ILIKE $${paramIndex} OR cpf ILIKE $${paramIndex} OR cnh_num ILIKE $${paramIndex})`;
       params.push(`%${search}%`);
       paramIndex++;
     }
@@ -74,29 +91,29 @@ router.get('/:id', authenticateToken, async (req, res) => {
 router.post('/', authenticateToken, requireRole('admin', 'gestor_frota'), async (req, res) => {
   try {
     const {
-      name, cpf, rg, birth_date, cnh, cnh_category, cnh_expiry,
-      phone, email, address, city, state, zip_code, status,
-      admission_date, photo_url, notes
+      name, cpf, rg, telefone, email, endereco,
+      cnh_num, cnh_categoria, cnh_validade, cnh_url,
+      habilitado, observacoes
     } = req.body;
 
     const result = await pool.query(
       `INSERT INTO drivers (
-        name, cpf, rg, birth_date, cnh, cnh_category, cnh_expiry,
-        phone, email, address, city, state, zip_code, status,
-        admission_date, photo_url, notes
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        name, cpf, rg, telefone, email, endereco,
+        cnh_num, cnh_categoria, cnh_validade, cnh_url,
+        habilitado, observacoes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING *`,
       [
-        name, cpf, rg, birth_date, cnh, cnh_category, cnh_expiry,
-        phone, email, address, city, state, zip_code, status || 'ativo',
-        admission_date, photo_url, notes
+        name, cpf, rg, telefone, email, endereco,
+        cnh_num, cnh_categoria, cnh_validade, cnh_url,
+        habilitado !== false, observacoes
       ]
     );
 
     await pool.query(
-      `INSERT INTO audit_logs (user_id, action, entity, entity_id, details, ip_address)
-       VALUES ($1, 'CREATE', 'drivers', $2, $3, $4)`,
-      [req.user.id, result.rows[0].id, JSON.stringify({ name, cpf }), req.ip]
+      `INSERT INTO audit_logs (user_id, user_name, action, entity, entity_id, entity_name)
+       VALUES ($1, $2, 'CREATE', 'drivers', $3, $4)`,
+      [req.user.id, req.user.name, result.rows[0].id, name]
     );
 
     res.status(201).json(result.rows[0]);
@@ -115,11 +132,22 @@ router.put('/:id', authenticateToken, requireRole('admin', 'gestor_frota'), asyn
     const { id } = req.params;
     const fields = req.body;
     
-    const setClause = Object.keys(fields)
+    const cleanFields = {};
+    Object.keys(fields).forEach(key => {
+      if (fields[key] !== undefined) {
+        cleanFields[key] = fields[key];
+      }
+    });
+
+    if (Object.keys(cleanFields).length === 0) {
+      return res.status(400).json({ error: 'Nenhum campo para atualizar' });
+    }
+
+    const setClause = Object.keys(cleanFields)
       .map((key, index) => `${key} = $${index + 2}`)
       .join(', ');
     
-    const values = [id, ...Object.values(fields)];
+    const values = [id, ...Object.values(cleanFields)];
 
     const result = await pool.query(
       `UPDATE drivers SET ${setClause}, updated_at = NOW() WHERE id = $1 RETURNING *`,
@@ -131,9 +159,9 @@ router.put('/:id', authenticateToken, requireRole('admin', 'gestor_frota'), asyn
     }
 
     await pool.query(
-      `INSERT INTO audit_logs (user_id, action, entity, entity_id, details, ip_address)
-       VALUES ($1, 'UPDATE', 'drivers', $2, $3, $4)`,
-      [req.user.id, id, JSON.stringify(fields), req.ip]
+      `INSERT INTO audit_logs (user_id, user_name, action, entity, entity_id, changes)
+       VALUES ($1, $2, 'UPDATE', 'drivers', $3, $4)`,
+      [req.user.id, req.user.name, id, JSON.stringify(cleanFields)]
     );
 
     res.json(result.rows[0]);
@@ -158,30 +186,14 @@ router.delete('/:id', authenticateToken, requireRole('admin'), async (req, res) 
     }
 
     await pool.query(
-      `INSERT INTO audit_logs (user_id, action, entity, entity_id, details, ip_address)
-       VALUES ($1, 'DELETE', 'drivers', $2, $3, $4)`,
-      [req.user.id, id, JSON.stringify({ name: result.rows[0].name }), req.ip]
+      `INSERT INTO audit_logs (user_id, user_name, action, entity, entity_id, entity_name)
+       VALUES ($1, $2, 'DELETE', 'drivers', $3, $4)`,
+      [req.user.id, req.user.name, id, result.rows[0].name]
     );
 
     res.json({ message: 'Motorista excluído com sucesso' });
   } catch (error) {
     console.error('Erro ao deletar motorista:', error);
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-// Motoristas disponíveis
-router.get('/available/list', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT id, name, cnh, cnh_category, phone 
-       FROM drivers 
-       WHERE status = 'ativo' 
-       ORDER BY name`
-    );
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Erro ao buscar motoristas disponíveis:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });

@@ -4,17 +4,36 @@ const { authenticateToken, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
+// Próximas manutenções - DEVE vir antes de /:id
+router.get('/upcoming/list', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT m.*, 
+             v.placa as vehicle_placa, v.modelo as vehicle_modelo, v.marca as vehicle_marca
+      FROM maintenances m
+      LEFT JOIN vehicles v ON m.vehicle_id = v.id
+      WHERE m.status IN ('agendada', 'em_execucao')
+      ORDER BY m.data_entrada ASC NULLS LAST
+      LIMIT 10
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Erro ao buscar próximas manutenções:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 // Listar manutenções
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { vehicle_id, status, type, page = 1, limit = 20 } = req.query;
+    const { vehicle_id, status, tipo, prioridade, page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
     
     let query = `
       SELECT m.*, 
-             v.plate as vehicle_plate, v.model as vehicle_model
+             v.placa as vehicle_placa, v.modelo as vehicle_modelo, v.marca as vehicle_marca
       FROM maintenances m
-      JOIN vehicles v ON m.vehicle_id = v.id
+      LEFT JOIN vehicles v ON m.vehicle_id = v.id
       WHERE 1=1
     `;
     const params = [];
@@ -30,16 +49,21 @@ router.get('/', authenticateToken, async (req, res) => {
       params.push(status);
     }
 
-    if (type) {
-      query += ` AND m.type = $${paramIndex++}`;
-      params.push(type);
+    if (tipo) {
+      query += ` AND m.tipo = $${paramIndex++}`;
+      params.push(tipo);
+    }
+
+    if (prioridade) {
+      query += ` AND m.prioridade = $${paramIndex++}`;
+      params.push(prioridade);
     }
 
     const countQuery = query.replace(/SELECT m\.\*.*FROM/, 'SELECT COUNT(*) FROM');
     const countResult = await pool.query(countQuery, params);
     const total = parseInt(countResult.rows[0].count);
 
-    query += ` ORDER BY m.scheduled_date DESC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+    query += ` ORDER BY m.data_entrada DESC NULLS LAST, m.created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
     params.push(limit, offset);
 
     const result = await pool.query(query, params);
@@ -64,9 +88,9 @@ router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT m.*, 
-              v.plate as vehicle_plate, v.model as vehicle_model
+              v.placa as vehicle_placa, v.modelo as vehicle_modelo, v.marca as vehicle_marca
        FROM maintenances m
-       JOIN vehicles v ON m.vehicle_id = v.id
+       LEFT JOIN vehicles v ON m.vehicle_id = v.id
        WHERE m.id = $1`,
       [req.params.id]
     );
@@ -86,23 +110,37 @@ router.get('/:id', authenticateToken, async (req, res) => {
 router.post('/', authenticateToken, requireRole('admin', 'gestor_frota'), async (req, res) => {
   try {
     const {
-      vehicle_id, type, description, scheduled_date, scheduled_km,
-      estimated_cost, workshop, notes
+      vehicle_id, trip_id, tipo, categoria, descricao, fornecedor,
+      custo, pecas, data_entrada, data_exec, proxima_data, proxima_km,
+      status, prioridade, anexo_url, nota_url, observacoes
     } = req.body;
 
     const result = await pool.query(
       `INSERT INTO maintenances (
-        vehicle_id, type, description, scheduled_date, scheduled_km,
-        estimated_cost, workshop, status, notes
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'agendada', $8)
+        vehicle_id, trip_id, tipo, categoria, descricao, fornecedor,
+        custo, pecas, data_entrada, data_exec, proxima_data, proxima_km,
+        status, prioridade, anexo_url, nota_url, observacoes, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *`,
-      [vehicle_id, type, description, scheduled_date, scheduled_km, estimated_cost, workshop, notes]
+      [
+        vehicle_id, trip_id, tipo, categoria, descricao, fornecedor,
+        custo, pecas, data_entrada, data_exec, proxima_data, proxima_km,
+        status || 'agendada', prioridade || 'normal', anexo_url, nota_url, observacoes, req.user.id
+      ]
     );
 
+    // Atualiza situação do veículo para manutenção se iniciada
+    if (vehicle_id && status === 'em_execucao') {
+      await pool.query(
+        "UPDATE vehicles SET situacao = 'manutencao' WHERE id = $1",
+        [vehicle_id]
+      );
+    }
+
     await pool.query(
-      `INSERT INTO audit_logs (user_id, action, entity, entity_id, details, ip_address)
-       VALUES ($1, 'CREATE', 'maintenances', $2, $3, $4)`,
-      [req.user.id, result.rows[0].id, JSON.stringify({ vehicle_id, type }), req.ip]
+      `INSERT INTO audit_logs (user_id, user_name, action, entity, entity_id)
+       VALUES ($1, $2, 'CREATE', 'maintenances', $3)`,
+      [req.user.id, req.user.name, result.rows[0].id]
     );
 
     res.status(201).json(result.rows[0]);
@@ -117,91 +155,69 @@ router.put('/:id/start', authenticateToken, requireRole('admin', 'gestor_frota')
   try {
     const { id } = req.params;
 
-    const maintenanceResult = await pool.query(
-      'SELECT vehicle_id FROM maintenances WHERE id = $1',
+    const result = await pool.query(
+      `UPDATE maintenances 
+       SET status = 'em_execucao', data_entrada = COALESCE(data_entrada, CURRENT_DATE), updated_at = NOW() 
+       WHERE id = $1 
+       RETURNING *`,
       [id]
     );
 
-    if (maintenanceResult.rows.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Manutenção não encontrada' });
     }
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      const result = await client.query(
-        `UPDATE maintenances 
-         SET status = 'em_andamento', start_date = NOW()
-         WHERE id = $1
-         RETURNING *`,
-        [id]
+    // Atualiza situação do veículo
+    if (result.rows[0].vehicle_id) {
+      await pool.query(
+        "UPDATE vehicles SET situacao = 'manutencao' WHERE id = $1",
+        [result.rows[0].vehicle_id]
       );
-
-      // Colocar veículo em manutenção
-      await client.query(
-        'UPDATE vehicles SET status = $1 WHERE id = $2',
-        ['manutencao', maintenanceResult.rows[0].vehicle_id]
-      );
-
-      await client.query('COMMIT');
-      res.json(result.rows[0]);
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
     }
+
+    res.json(result.rows[0]);
   } catch (error) {
     console.error('Erro ao iniciar manutenção:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
-// Finalizar manutenção
+// Concluir manutenção
 router.put('/:id/finish', authenticateToken, requireRole('admin', 'gestor_frota'), async (req, res) => {
   try {
     const { id } = req.params;
-    const { actual_cost, completion_km, notes } = req.body;
+    const { custo, pecas, observacoes, proxima_data, proxima_km } = req.body;
 
-    const maintenanceResult = await pool.query(
-      'SELECT vehicle_id FROM maintenances WHERE id = $1',
-      [id]
+    const result = await pool.query(
+      `UPDATE maintenances 
+       SET status = 'concluida', 
+           data_exec = CURRENT_DATE,
+           custo = COALESCE($2, custo),
+           pecas = COALESCE($3, pecas),
+           observacoes = COALESCE($4, observacoes),
+           proxima_data = COALESCE($5, proxima_data),
+           proxima_km = COALESCE($6, proxima_km),
+           updated_at = NOW() 
+       WHERE id = $1 
+       RETURNING *`,
+      [id, custo, pecas, observacoes, proxima_data, proxima_km]
     );
 
-    if (maintenanceResult.rows.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Manutenção não encontrada' });
     }
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      const result = await client.query(
-        `UPDATE maintenances 
-         SET status = 'concluida', completion_date = NOW(), actual_cost = $1, 
-             completion_km = $2, notes = COALESCE($3, notes)
-         WHERE id = $4
-         RETURNING *`,
-        [actual_cost, completion_km, notes, id]
+    // Retorna veículo para ativo
+    if (result.rows[0].vehicle_id) {
+      await pool.query(
+        "UPDATE vehicles SET situacao = 'ativo' WHERE id = $1",
+        [result.rows[0].vehicle_id]
       );
-
-      // Liberar veículo
-      await client.query(
-        'UPDATE vehicles SET status = $1, current_km = GREATEST(current_km, $2) WHERE id = $3',
-        ['disponivel', completion_km || 0, maintenanceResult.rows[0].vehicle_id]
-      );
-
-      await client.query('COMMIT');
-      res.json(result.rows[0]);
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
     }
+
+    res.json(result.rows[0]);
   } catch (error) {
-    console.error('Erro ao finalizar manutenção:', error);
+    console.error('Erro ao concluir manutenção:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -212,11 +228,22 @@ router.put('/:id', authenticateToken, requireRole('admin', 'gestor_frota'), asyn
     const { id } = req.params;
     const fields = req.body;
     
-    const setClause = Object.keys(fields)
+    const cleanFields = {};
+    Object.keys(fields).forEach(key => {
+      if (fields[key] !== undefined) {
+        cleanFields[key] = fields[key];
+      }
+    });
+
+    if (Object.keys(cleanFields).length === 0) {
+      return res.status(400).json({ error: 'Nenhum campo para atualizar' });
+    }
+
+    const setClause = Object.keys(cleanFields)
       .map((key, index) => `${key} = $${index + 2}`)
       .join(', ');
     
-    const values = [id, ...Object.values(fields)];
+    const values = [id, ...Object.values(cleanFields)];
 
     const result = await pool.query(
       `UPDATE maintenances SET ${setClause}, updated_at = NOW() WHERE id = $1 RETURNING *`,
@@ -226,6 +253,12 @@ router.put('/:id', authenticateToken, requireRole('admin', 'gestor_frota'), asyn
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Manutenção não encontrada' });
     }
+
+    await pool.query(
+      `INSERT INTO audit_logs (user_id, user_name, action, entity, entity_id, changes)
+       VALUES ($1, $2, 'UPDATE', 'maintenances', $3, $4)`,
+      [req.user.id, req.user.name, id, JSON.stringify(cleanFields)]
+    );
 
     res.json(result.rows[0]);
   } catch (error) {
@@ -237,37 +270,26 @@ router.put('/:id', authenticateToken, requireRole('admin', 'gestor_frota'), asyn
 // Deletar manutenção
 router.delete('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
+    const { id } = req.params;
+
     const result = await pool.query(
-      'DELETE FROM maintenances WHERE id = $1 RETURNING id',
-      [req.params.id]
+      'DELETE FROM maintenances WHERE id = $1 RETURNING id, vehicle_id',
+      [id]
     );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Manutenção não encontrada' });
     }
 
+    await pool.query(
+      `INSERT INTO audit_logs (user_id, user_name, action, entity, entity_id)
+       VALUES ($1, $2, 'DELETE', 'maintenances', $3)`,
+      [req.user.id, req.user.name, id]
+    );
+
     res.json({ message: 'Manutenção excluída com sucesso' });
   } catch (error) {
     console.error('Erro ao deletar manutenção:', error);
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-// Próximas manutenções
-router.get('/upcoming/list', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT m.*, v.plate, v.model
-      FROM maintenances m
-      JOIN vehicles v ON m.vehicle_id = v.id
-      WHERE m.status IN ('agendada', 'em_andamento')
-      AND m.scheduled_date >= CURRENT_DATE
-      ORDER BY m.scheduled_date ASC
-      LIMIT 10
-    `);
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Erro ao buscar próximas manutenções:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
