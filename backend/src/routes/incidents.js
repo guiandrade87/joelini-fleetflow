@@ -4,15 +4,15 @@ const { authenticateToken, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Listar incidentes
+// Listar ocorrências
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { vehicle_id, driver_id, type, status, page = 1, limit = 20 } = req.query;
+    const { vehicle_id, driver_id, tipo, status, page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
     
     let query = `
       SELECT i.*, 
-             v.plate as vehicle_plate, v.model as vehicle_model,
+             v.placa as vehicle_placa, v.modelo as vehicle_modelo, v.marca as vehicle_marca,
              d.name as driver_name
       FROM incidents i
       LEFT JOIN vehicles v ON i.vehicle_id = v.id
@@ -32,9 +32,9 @@ router.get('/', authenticateToken, async (req, res) => {
       params.push(driver_id);
     }
 
-    if (type) {
-      query += ` AND i.type = $${paramIndex++}`;
-      params.push(type);
+    if (tipo) {
+      query += ` AND i.tipo = $${paramIndex++}`;
+      params.push(tipo);
     }
 
     if (status) {
@@ -46,7 +46,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const countResult = await pool.query(countQuery, params);
     const total = parseInt(countResult.rows[0].count);
 
-    query += ` ORDER BY i.date DESC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+    query += ` ORDER BY i.data DESC, i.created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
     params.push(limit, offset);
 
     const result = await pool.query(query, params);
@@ -61,7 +61,7 @@ router.get('/', authenticateToken, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Erro ao listar incidentes:', error);
+    console.error('Erro ao listar ocorrências:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -71,7 +71,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT i.*, 
-              v.plate as vehicle_plate, v.model as vehicle_model,
+              v.placa as vehicle_placa, v.modelo as vehicle_modelo, v.marca as vehicle_marca,
               d.name as driver_name
        FROM incidents i
        LEFT JOIN vehicles v ON i.vehicle_id = v.id
@@ -81,60 +81,74 @@ router.get('/:id', authenticateToken, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Incidente não encontrado' });
+      return res.status(404).json({ error: 'Ocorrência não encontrada' });
     }
 
     res.json(result.rows[0]);
   } catch (error) {
-    console.error('Erro ao buscar incidente:', error);
+    console.error('Erro ao buscar ocorrência:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
-// Criar incidente
+// Criar ocorrência
 router.post('/', authenticateToken, async (req, res) => {
   try {
     const {
-      vehicle_id, driver_id, type, date, description, location,
-      severity, estimated_cost, photos, boletim_ocorrencia, notes
+      vehicle_id, driver_id, trip_id, tipo, subtipo, descricao,
+      valor, data, local, status, responsavel, bo_numero,
+      anexo_url, observacoes
     } = req.body;
 
     const result = await pool.query(
       `INSERT INTO incidents (
-        vehicle_id, driver_id, type, date, description, location,
-        severity, estimated_cost, photos, boletim_ocorrencia, status, notes
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'aberto', $11)
+        vehicle_id, driver_id, trip_id, tipo, subtipo, descricao,
+        valor, data, local, status, responsavel, bo_numero,
+        anexo_url, observacoes, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *`,
       [
-        vehicle_id, driver_id, type, date, description, location,
-        severity, estimated_cost, photos, boletim_ocorrencia, notes
+        vehicle_id, driver_id, trip_id, tipo, subtipo, descricao,
+        valor, data, local, status || 'aberto', responsavel, bo_numero,
+        anexo_url, observacoes, req.user.id
       ]
     );
 
     await pool.query(
-      `INSERT INTO audit_logs (user_id, action, entity, entity_id, details, ip_address)
-       VALUES ($1, 'CREATE', 'incidents', $2, $3, $4)`,
-      [req.user.id, result.rows[0].id, JSON.stringify({ type, vehicle_id }), req.ip]
+      `INSERT INTO audit_logs (user_id, user_name, action, entity, entity_id)
+       VALUES ($1, $2, 'CREATE', 'incidents', $3)`,
+      [req.user.id, req.user.name, result.rows[0].id]
     );
 
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    console.error('Erro ao criar incidente:', error);
+    console.error('Erro ao criar ocorrência:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
-// Atualizar incidente
+// Atualizar ocorrência
 router.put('/:id', authenticateToken, requireRole('admin', 'gestor_frota'), async (req, res) => {
   try {
     const { id } = req.params;
     const fields = req.body;
     
-    const setClause = Object.keys(fields)
+    const cleanFields = {};
+    Object.keys(fields).forEach(key => {
+      if (fields[key] !== undefined) {
+        cleanFields[key] = fields[key];
+      }
+    });
+
+    if (Object.keys(cleanFields).length === 0) {
+      return res.status(400).json({ error: 'Nenhum campo para atualizar' });
+    }
+
+    const setClause = Object.keys(cleanFields)
       .map((key, index) => `${key} = $${index + 2}`)
       .join(', ');
     
-    const values = [id, ...Object.values(fields)];
+    const values = [id, ...Object.values(cleanFields)];
 
     const result = await pool.query(
       `UPDATE incidents SET ${setClause}, updated_at = NOW() WHERE id = $1 RETURNING *`,
@@ -142,56 +156,73 @@ router.put('/:id', authenticateToken, requireRole('admin', 'gestor_frota'), asyn
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Incidente não encontrado' });
+      return res.status(404).json({ error: 'Ocorrência não encontrada' });
     }
+
+    await pool.query(
+      `INSERT INTO audit_logs (user_id, user_name, action, entity, entity_id, changes)
+       VALUES ($1, $2, 'UPDATE', 'incidents', $3, $4)`,
+      [req.user.id, req.user.name, id, JSON.stringify(cleanFields)]
+    );
 
     res.json(result.rows[0]);
   } catch (error) {
-    console.error('Erro ao atualizar incidente:', error);
+    console.error('Erro ao atualizar ocorrência:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
-// Resolver incidente
+// Resolver ocorrência
 router.put('/:id/resolve', authenticateToken, requireRole('admin', 'gestor_frota'), async (req, res) => {
   try {
     const { id } = req.params;
-    const { resolution, actual_cost } = req.body;
+    const { observacoes, valor } = req.body;
 
     const result = await pool.query(
       `UPDATE incidents 
-       SET status = 'resolvido', resolution = $1, actual_cost = $2, resolution_date = NOW(), updated_at = NOW()
-       WHERE id = $3
+       SET status = 'resolvido', 
+           observacoes = COALESCE($2, observacoes),
+           valor = COALESCE($3, valor),
+           updated_at = NOW() 
+       WHERE id = $1 
        RETURNING *`,
-      [resolution, actual_cost, id]
+      [id, observacoes, valor]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Incidente não encontrado' });
+      return res.status(404).json({ error: 'Ocorrência não encontrada' });
     }
 
     res.json(result.rows[0]);
   } catch (error) {
-    console.error('Erro ao resolver incidente:', error);
+    console.error('Erro ao resolver ocorrência:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
-// Deletar incidente
+// Deletar ocorrência
 router.delete('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
+    const { id } = req.params;
+
     const result = await pool.query(
       'DELETE FROM incidents WHERE id = $1 RETURNING id',
-      [req.params.id]
+      [id]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Incidente não encontrado' });
+      return res.status(404).json({ error: 'Ocorrência não encontrada' });
     }
 
-    res.json({ message: 'Incidente excluído com sucesso' });
+    await pool.query(
+      `INSERT INTO audit_logs (user_id, user_name, action, entity, entity_id)
+       VALUES ($1, $2, 'DELETE', 'incidents', $3)`,
+      [req.user.id, req.user.name, id]
+    );
+
+    res.json({ message: 'Ocorrência excluída com sucesso' });
   } catch (error) {
-    console.error('Erro ao deletar incidente:', error);
+    console.error('Erro ao deletar ocorrência:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
